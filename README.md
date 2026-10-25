@@ -124,7 +124,10 @@ All optional, except `path` in `forFeature`.
 | `path` | `'/'` for `forRoot`; required for `forFeature` | Route of the instance on the listener. No prefix or versioning applies. Two instances on one path fail at startup. |
 | `authorize` | none | `(req) => boolean \| Promise<boolean>`, called with the raw Node `IncomingMessage` before each request to this instance is answered. `false`, or a throw (logged), answers 403. |
 | `tools` | all `true` | One switch per tool group: `{ graph, routes, logs, requests, events, schedule }`. A group switched off registers no tools and installs nothing. |
-| `logs.bufferSize` | `2000` | Size of the ring buffer the `Logger` tee keeps. |
+| `logs.bufferSize` | `2000` | Size of the ring buffer `logs_tail` reads. |
+| `logs.sink` | none | What `createLogSink()` returned, added to your own logger's outputs: that logger's lines enter the buffer too. See [Reading your own logger](#reading-your-own-logger). |
+| `logs.capture` | `'both'` | What fills the buffer: `'nest'` (Nest's `Logger`, through the tee), `'sink'` (only `logs.sink`; no tee is installed) or `'both'`. `'sink'` requires `logs.sink`. |
+| `logs.normalize` | none | `(record) => entry \| undefined`: maps the sink's records of a format the built-in mapping does not read. |
 | `requests.bufferSize` | `500` | How many request traces are kept. |
 | `requests.idHeader` | `'x-nest-mcp-request-id'` | The correlation header an agent sets to find a request's trace. Read, never echoed back. |
 | `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never. |
@@ -223,17 +226,22 @@ At startup the module wraps the logger your app set (with `app.useLogger`, the `
 `NestFactory.create`, or Nest's default `ConsoleLogger`) in a **transparent tee**: every call to
 Nest's `Logger` reaches your logger exactly as it was made, and a copy goes to an in-memory ring
 buffer of `logs.bufferSize` entries. Nothing is masked, filtered or altered, and nothing is persisted.
-The tee is installed once per process and shared by every instance, so the first instance that
-installs it decides `logs.bufferSize`; switching the `logs` group off in every instance installs
-nothing.
+If your services log through a logger of their own (`PinoLogger`, winston…), hand its output to the
+same buffer with a [log sink](#reading-your-own-logger). The tee and the buffer are installed once
+per process and shared by every instance: the first instance that installs them decides
+`logs.bufferSize`, and an instance with `logs.capture` other than `'sink'` installs the tee, so give
+every instance with the `logs` group on the same `logs`. Switching the `logs` group off in every
+instance installs nothing.
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, timestamp, level, context, message, stack? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
-| `logs_levels` | — | `levels` your logger has on (`null` if it has no `isLevelEnabled`) and the `buffer`: `size`, `length`, `lastSeq` |
+| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `source?` (`'nest'` or `'sink'`), `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, source, timestamp, level, context, message, stack? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
+| `logs_levels` | — | `levels` Nest's logger has on (`null` if it has no `isLevelEnabled`, or with `capture: 'sink'`), `capture`, the `buffer` (`size`, `length`, `lastSeq`) and the `sink` (`connected`, `received`, `errors`, `lastError?`; `null` without one) |
 
 - Levels are Nest's: `verbose`, `debug`, `log`, `warn`, `error`, `fatal`. `minLevel` keeps that level
   and the more severe ones.
+- `source` says where an entry came from: `'nest'` for Nest's `Logger`, `'sink'` for your logger
+  through the sink.
 - `context` is the trailing string argument, as `ConsoleLogger` reads it: the class name for a
   `new Logger(MyService.name)`. In `error`, the multi-line string before it is the `stack`.
   Non-string messages are stored as JSON, capped at 2000 characters.
@@ -247,6 +255,118 @@ nothing.
   so the buffer holds what your logger keeps. With `logger: false` nothing is printed, as before,
   and the buffer still fills.
 - The inspector's own lines (context `NestMcp`) are in the buffer too.
+
+### Reading your own logger
+
+The tee sees only what goes through Nest's `Logger`. A service that logs through a logger of its own
+writes past it: with `nestjs-pino`, this is what reaches `logs_tail`:
+
+| Written through | Without a sink | With a sink |
+|-----------------|----------------|-------------|
+| Nest's `Logger` (`new Logger(ctx)`, and the `Logger` nestjs-pino installs with `app.useLogger`) | yes (`source: 'nest'`) | yes (`'nest'`, `'sink'` or both, per `logs.capture`) |
+| `PinoLogger`, `@InjectPinoLogger()` | no | yes (`source: 'sink'`) |
+| The `pino-http` request lines | no | yes (`source: 'sink'`) |
+
+`createLogSink()` returns a **log sink**: a writable stream your logger writes to like any other
+output, plus a `record(entry)` function for loggers that hand over objects. Create it before your
+logger, add it to the logger's outputs and pass it as `logs.sink` (from `forRoot`, or returned by a
+`forRootAsync` factory). The sink only reads: your other outputs get exactly what they got before,
+and it never throws into your logger (a failure is swallowed and counted in `logs_levels.sink`).
+
+**pino, with `nestjs-pino`.** Write to stdout and to the sink with `pino.multistream`:
+
+```ts
+import { Module } from '@nestjs/common';
+import { createLogSink, NestMcpModule } from '@jsirp/nestjs-mcp';
+import { LoggerModule } from 'nestjs-pino';
+import pino from 'pino';
+
+const logSink = createLogSink();
+
+@Module({
+  imports: [
+    LoggerModule.forRoot({
+      pinoHttp: [
+        { level: 'debug' },
+        pino.multistream([
+          { stream: process.stdout, level: 'debug' },
+          { stream: logSink, level: 'debug' },
+        ]),
+      ],
+    }),
+    // app.useLogger(app.get(Logger)) routes Nest's Logger through pino too: read it once, from the sink.
+    NestMcpModule.forRoot({ logs: { sink: logSink, capture: 'sink' } }),
+  ],
+})
+export class AppModule {}
+```
+
+The sink must run in your process: add it to `multistream` (or as a plain `stream`), not as a
+`pino.transport` target, which runs in a worker thread.
+
+**winston, with or without `nest-winston`.** A transport that hands each record to `record`:
+
+```ts
+import { createLogSink, NestMcpModule } from '@jsirp/nestjs-mcp';
+import * as winston from 'winston';
+import Transport from 'winston-transport';
+
+const logSink = createLogSink();
+
+class InspectorTransport extends Transport {
+  override log(info: unknown, next: () => void): void {
+    logSink.record(info);
+    next();
+  }
+}
+
+export const logger = winston.createLogger({
+  transports: [new winston.transports.Console(), new InspectorTransport()],
+});
+
+// In AppModule. With WinstonModule as the app logger, Nest's Logger goes through winston too:
+NestMcpModule.forRoot({ logs: { sink: logSink, capture: 'sink' } });
+```
+
+What the sink reads out of the box:
+
+- **pino and bunyan JSON lines**: the numeric `level` (10 → `verbose`, 20 → `debug`, 30 → `log`,
+  40 → `warn`, 50 → `error`, 60 → `fatal`), `msg`, `time`, `context` (what nestjs-pino and
+  nest-winston set) or else `name`, and the stack of `err`.
+- **Objects passed to `record`**, such as winston's: a level name (`info` → `log`, `warning` →
+  `warn`, `trace` and `silly` → `verbose`…, colour codes ignored), `message`, `timestamp`, `context`.
+- **Plain text**: each line is a `log` entry with the line as its message and no context.
+
+One write may carry several lines; each is one entry. Anything else maps with `logs.normalize`,
+which receives the parsed JSON line, the plain-text line as a string, or what you passed to
+`record`, and returns `{ level?, message?, context?, timestamp?, stack? }`, or `undefined` to use
+the built-in mapping:
+
+```ts
+NestMcpModule.forRoot({
+  logs: {
+    sink: logSink,
+    normalize: (record) =>
+      typeof record === 'object' && record !== null && 'severity' in record
+        ? { level: String(record.severity), message: (record as { text?: string }).text }
+        : undefined,
+  },
+});
+```
+
+Which `logs.capture` to pick:
+
+- `'both'` (the default): your services log through their own logger and Nest's `Logger` prints
+  elsewhere (Nest's `ConsoleLogger`, for example). Nothing is duplicated.
+- `'sink'`: Nest's `Logger` also writes through the logger the sink is attached to (nestjs-pino's or
+  nest-winston's logger set with `app.useLogger`). With `'both'` each of those lines would be there
+  twice, once per `source`. No tee is installed, so `logs_levels.levels` is `null`.
+- `'nest'`: the sink is ignored.
+
+What arrives before the app starts is held by the sink (up to 1000 entries) and delivered when the
+inspector connects it; when the app closes, the sink is disconnected and holds again. With the
+inspector disabled the sink is never connected, so it only keeps those last 1000 lines; leave it out
+of your logger's outputs where you never enable the inspector.
 
 ### Request traces
 
@@ -392,13 +512,16 @@ from `authorize` or put a reverse proxy before the listener.
 - Verified with Express. Fastify is not supported in v1.
 - `graph_*` and `routes_*` need `snapshot: true` in `NestFactory.create`; without it the module warns
   at startup and those tools return `snapshot_disabled` with the exact option to set.
-- The log capture sees what goes through Nest's `Logger`. A logger that writes on its own is not
-  captured: with `nestjs-pino`, what your code logs through `Logger` is in `logs_tail`, and the
-  request lines `pino-http` writes are not.
+- Without a [log sink](#reading-your-own-logger), the log capture sees only what goes through Nest's
+  `Logger`: with `nestjs-pino`, the lines written through `PinoLogger`/`@InjectPinoLogger()` and the
+  `pino-http` request lines are not captured. With a sink, only the fields the sink maps are kept
+  (level, message, context, time, stack); the other fields of a record (`req`, `res`, bindings) are
+  not.
 - The tee is installed during `app.init()` (in `onModuleInit`). Lines written before that, including
   the ones `bufferLogs: true` holds until `useLogger` flushes them, and the `onModuleInit` hooks of
   modules Nest initialises before the inspector's, are not in the buffer. A `useLogger` after the app
-  started replaces the tee, and capture stops.
+  started replaces the tee, and capture stops. A log sink is not affected: it holds what arrives
+  before the inspector connects it.
 - With Nest's default logger, every `Logger` prints through one shared `ConsoleLogger`; a per-instance
   `new Logger(context, { timestamp: true })` loses its elapsed-time suffix.
 - Request tracing needs the app's routes to be built after the module is configured, which is the

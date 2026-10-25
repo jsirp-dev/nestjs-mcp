@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ModulesContainer } from '@nestjs/core';
 import { LOGGER_CONTEXT, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
-import { installLogTee } from './logs/install-log-tee.js';
+import { installLogs } from './logs/install-logs.js';
 import type { ResolvedNestMcpOptions } from './nest-mcp.options.js';
 import { ToolRegistry } from './tools/registry.js';
 import type { ToolContext } from './tools/tool-context.js';
@@ -17,10 +17,10 @@ import { createMcpHandler } from './transport/mcp-endpoint.js';
 
 /**
  * What each instance does over the app's lifecycle: at `onModuleInit`, joins (or installs) the
- * process-wide Logger tee and joins the app's inspector listener with its path; at
- * `onApplicationBootstrap`, opens the listener (the first instance does) and writes the bootstrap
+ * process-wide Logger tee, connects the host's log sink and joins the app's inspector listener with
+ * its path; at `onApplicationBootstrap`, opens the listener (the first instance does) and writes the bootstrap
  * log and warnings, once per instance, through Nest's `Logger` (context `NestMcp`); at
- * `onModuleDestroy`, leaves the listener, which the last instance closes.
+ * `onModuleDestroy`, disconnects the sink and leaves the listener, which the last instance closes.
  */
 @Injectable()
 export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
@@ -42,7 +42,7 @@ export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, O
    */
   onModuleInit(): void {
     if (!this.options.enabled) return;
-    if (this.options.tools.logs) this.context.logTee = installLogTee(this.options.logs.bufferSize);
+    if (this.options.tools.logs) this.context.logs = installLogs(this.options.logs);
     const onError = (message: string) => this.logger.error(message);
     this.listener = listenerFor(this.modulesContainer);
     this.listener.join({
@@ -76,6 +76,7 @@ export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, O
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.context.logs?.uninstall();
     await this.listener?.leave(this.options.path);
     this.listener = undefined;
   }

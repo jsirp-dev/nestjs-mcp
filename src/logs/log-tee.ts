@@ -22,7 +22,8 @@ function isStackFormat(value: unknown): value is string | undefined {
   return /^(.)+\n\s+at .+:\d+:\d+/.test(value ?? '');
 }
 
-function serialise(value: unknown): string {
+/** Strings as they are; anything else as JSON (or `String`), capped at 2000 characters. */
+export function serialise(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value instanceof Error) return value.message;
   let text: string | undefined;
@@ -136,6 +137,7 @@ export class LogTee implements LoggerService {
     try {
       if (this.inner?.isLevelEnabled?.(level) === false) return;
       this.buffer.push({
+        source: 'nest',
         timestamp: new Date().toISOString(),
         level,
         ...splitLogCall(level, [message, ...params]),

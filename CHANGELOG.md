@@ -13,6 +13,76 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Log sink: the host's own logger in `logs_tail` (ticket #24, 2026-10-25)
+
+Implements decision 2 of [ADR-0004](docs/adr/0004-own-listener-and-log-sink.md).
+
+#### Done
+
+- `createLogSink()` (`src/logs/log-sink.ts`) returns a `LogSink`: a `Writable` the host adds to its
+  logger's outputs (pino `multistream`, a plain stream) plus `record(entry)` for loggers that hand
+  over objects (a winston transport). Passed as `logs.sink`, from `forRoot` or an `*Async` factory.
+- Built-in mapping (`src/logs/normalize.ts`): pino and bunyan JSON lines (numeric levels by band,
+  `msg`, `time`, `context` or `name`, `err.stack`), winston-style objects (level names, colour codes
+  stripped, `message`, `timestamp`, `context`) and plain text (`log`, the line as message). One write
+  with several lines gives one entry each. `logs.normalize(record)` maps other formats; `undefined`
+  falls back to the built-in mapping.
+- `logs.capture: 'nest' | 'sink' | 'both'` (default `'both'`): `'sink'` installs no tee, `'nest'`
+  ignores the sink. Every entry carries `source: 'nest' | 'sink'`; `logs_tail` gains a `source`
+  filter. Tee and sink feed one buffer, so `seq` orders both.
+- `logs_levels` gains `capture` and `sink: { connected, received, errors, lastError? } | null`.
+- The sink never throws into the logger and never emits `error`: a throwing `normalize`, an
+  unreadable chunk or a failing push is swallowed and counted; with a throwing `normalize` the line is
+  still recorded through the built-in mapping. Strings are kept exactly as written.
+- New option checks: an unknown `logs.capture`, a `logs.sink` that is not a sink, `capture: 'sink'`
+  without a sink, a non-function `normalize`.
+- README: options, the `Logs` section, and "Reading your own logger" with the pino (nestjs-pino) and
+  winston recipes, what is captured with nestjs-pino with and without a sink, and which `capture` to
+  pick. Master plan: the tee is installed at `onModuleInit` (it said `onApplicationBootstrap`).
+
+#### Deviations from ADR-0004
+
+- The sink is itself the writable (`LogSink extends Writable`, with `record` on it), not an object
+  holding a stream and a function, so `multistream([stdout, sink])` takes it as it is.
+
+#### Hot decisions
+
+- **The sink holds what arrives before an instance connects it** (up to 1000 entries, oldest dropped)
+  and delivers it on connect with the arrival time, so the host can create it before its logger and
+  lines from module construction are kept. Lines are parsed on delivery, so an unconnected sink (the
+  inspector disabled) costs a bounded queue of strings. On `onModuleDestroy` the sink is
+  disconnected and holds again, so an app that restarts in the same process reads it afresh.
+- **`write` is overridden**: each chunk is read at once whatever the stream's state, the callback is
+  called and `true` returned. No backpressure, and a write after `end` (a piped source that finished)
+  is read instead of becoming an `error`.
+- **Only the mapped fields are kept**: level, message, context, timestamp, stack. Other fields of a
+  record (`req`, `res`, pino bindings) are not stored, in line with "headers per option, never bodies"
+  for traces; the README says so.
+- **`timestamp` is the record's own time** (`time` or `timestamp`) when it parses, otherwise when the
+  sink received it. `stack` is kept at any level for the sink (the tee keeps it for `error`).
+- **Level names**: `info`, `http` and `notice` are `log`; `trace` and `silly` are `verbose`;
+  `crit`/`critical`/`alert`/`emerg` are `fatal`; anything unknown is `log`.
+- **`logs` is per process, like the tee**: the first instance decides `bufferSize`, a sink already
+  connected keeps its buffer (and its `normalize`) for the other instances of the app, and an
+  instance with `capture` other than `'sink'` installs the tee. The README asks for the same `logs`
+  on every instance.
+- `pino` stays a devDependency (`^9.6`, the one `nestjs-pino` 4 brings); winston is not added: the
+  winston criterion is covered by a transport-shaped object calling `record`, which is all a winston
+  transport does.
+
+#### Effect on other tickets (not closed here)
+
+- **#22**, point 1 (`PinoLogger` is not captured): resolved. With a sink on pino's `multistream`,
+  `PinoLogger`/`@InjectPinoLogger()` lines and the `pino-http` request lines are in `logs_tail`
+  (`source: 'sink'`); without one, the README's table says they are not. Point 2 was resolved by
+  #23, so #22 is resolved in full.
+
+#### Verification
+
+`yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (16 suites, 216
+tests) green on Nest 11 / Node 20; the same suite green on Nest 10.4.22 (the CI's Nest 10 step,
+run in a scratch copy).
+
 ### Own listener instead of a Nest controller (ticket #23, 2026-10-25)
 
 Implements decision 1 of [ADR-0004](docs/adr/0004-own-listener-and-log-sink.md).

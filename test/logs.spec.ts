@@ -76,6 +76,7 @@ describe('logs', () => {
     expect(warn.json.entries).toEqual([
       {
         seq: expect.any(Number),
+        source: 'nest',
         timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         level: 'warn',
         context: 'LoggingService',
@@ -149,7 +150,9 @@ describe('logs', () => {
     expect(json).toEqual({
       scope: { kind: 'app' },
       levels: ['log', 'warn', 'error', 'fatal'],
+      capture: 'both',
       buffer: { size: 2000, length: expect.any(Number), lastSeq: expect.any(Number) },
+      sink: null,
     });
   });
 

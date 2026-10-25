@@ -5,7 +5,7 @@ import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
 import type { EventsInspector } from '../events/install-events.js';
 import type { ScheduleInspector } from '../schedule/install-schedule.js';
-import type { LogTee } from '../logs/log-tee.js';
+import type { LogsInspector } from '../logs/install-logs.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
 import type { ResolvedNestMcpOptions } from '../nest-mcp.options.js';
@@ -29,10 +29,11 @@ export interface ToolContext {
   /** Reads the routes Nest registered and the enhancers each runs, per call. */
   routes: RoutesReader;
   /**
-   * The process-wide Logger tee this instance reads, set at `onModuleInit` of the instance when the
-   * `logs` group is on; `undefined` before that or with the group off.
+   * The log buffer this instance reads (the process-wide Logger tee's, the host's sink, or both),
+   * set at `onModuleInit` of the instance when the `logs` group is on; `undefined` before that or
+   * with the group off.
    */
-  logTee: LogTee | undefined;
+  logs: LogsInspector | undefined;
   /**
    * The app's request traces this instance reads, set in `configure` of the instance's module when
    * the `requests` group is on; `undefined` before that or with the group off.
@@ -81,7 +82,7 @@ export function createToolContext(
     serializedGraph,
     graph,
     routes: new RoutesReader(serializedGraph, graph, applicationConfig),
-    logTee: undefined,
+    logs: undefined,
     traces: undefined,
     events: undefined,
     schedule: undefined,

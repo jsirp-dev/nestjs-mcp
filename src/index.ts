@@ -1,12 +1,18 @@
 export { NestMcpModule } from './nest-mcp.module.js';
+export { createLogSink, LogSink } from './logs/log-sink.js';
+export type { LogSinkStats } from './logs/log-sink.js';
+export type { LogNormalizer, LogSinkEntry } from './logs/normalize.js';
+export type { LogEntry, LogLevel, LogRecord, LogSource } from './logs/model.js';
 export type {
   InstanceScopeKind,
+  LogCapture,
   NestMcpAsyncOptions,
   NestMcpAuthorize,
   NestMcpFactoryOptions,
   NestMcpFeatureAsyncOptions,
   NestMcpFeatureOptions,
   NestMcpListenOptions,
+  NestMcpLogsOptions,
   NestMcpOptions,
   NestMcpStaticOptions,
   RequestHeadersMode,

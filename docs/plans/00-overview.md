@@ -190,7 +190,7 @@ Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in 
 8. **The graph requires `snapshot: true`.** The module cannot enable it; it warns once at bootstrap and
    every graph or routes tool returns `snapshot_disabled` with the option to set.
 9. **Logs are transparent**: the `LoggerService` the app set with `app.useLogger` (or the default
-   `ConsoleLogger`) is wrapped with `Logger.overrideLogger` at `onApplicationBootstrap`, forwarded
+   `ConsoleLogger`) is wrapped with `Logger.overrideLogger` at `onModuleInit`, forwarded
    untouched and copied to a ring buffer. Nothing is masked. A host whose services log through their
    own logger (pino, winston…) attaches `createLogSink()` to that logger's outputs and passes it as
    `logs.sink`; pino and bunyan JSON and plain text are normalised out of the box, `logs.normalize`

@@ -7,6 +7,8 @@ import {
   DEFAULT_LOGS_BUFFER_SIZE,
   DEFAULT_REQUESTS_BUFFER_SIZE,
 } from './constants.js';
+import { isLogSink, type LogSink } from './logs/log-sink.js';
+import type { LogNormalizer } from './logs/normalize.js';
 import { hostPackageInfo } from './support/package-info.js';
 
 /** What an instance observes: the whole app (`forRoot`) or a module closure (`forFeature`). */
@@ -37,6 +39,23 @@ export interface NestMcpListenOptions {
   port?: number;
 }
 
+/**
+ * Which logs the buffer receives: Nest's `Logger` through the tee, the host's logger through
+ * `logs.sink`, or both. `'sink'` avoids duplicates when Nest's `Logger` writes through that logger.
+ */
+export type LogCapture = 'nest' | 'sink' | 'both';
+
+export interface NestMcpLogsOptions {
+  /** Default `2000`. */
+  bufferSize?: number;
+  /** From `createLogSink()`, added to the host logger's outputs: that logger's lines enter the buffer. */
+  sink?: LogSink;
+  /** Default `'both'`. `'sink'` requires `sink`; `'nest'` ignores it. */
+  capture?: LogCapture;
+  /** Maps the sink's records of a format the built-in mapping does not read. */
+  normalize?: LogNormalizer;
+}
+
 /** Access control over the raw request on the listener; `false` (or a throw) answers 403. */
 export type NestMcpAuthorize = (req: IncomingMessage) => boolean | Promise<boolean>;
 
@@ -54,7 +73,11 @@ export interface NestMcpOptions {
   authorize?: NestMcpAuthorize;
   /** One switch per tool group. All `true` by default. */
   tools?: Partial<Record<SwitchableToolGroup, boolean>>;
-  logs?: { bufferSize?: number };
+  /**
+   * The ring buffer `logs_tail` reads and what fills it. The tee is process-wide and the buffer
+   * shared, so give every instance with the `logs` group on the same `logs`.
+   */
+  logs?: NestMcpLogsOptions;
   requests?: { bufferSize?: number; idHeader?: string; headers?: RequestHeadersMode };
   /** What the server reports in `initialize`. Default: the app's `package.json`. */
   serverInfo?: { name?: string; version?: string };
@@ -86,7 +109,12 @@ export interface ResolvedNestMcpOptions {
   authorize: NestMcpAuthorize | undefined;
   scope: InstanceScopeKind;
   tools: Record<SwitchableToolGroup, boolean>;
-  logs: { bufferSize: number };
+  logs: {
+    bufferSize: number;
+    capture: LogCapture;
+    sink: LogSink | undefined;
+    normalize: LogNormalizer | undefined;
+  };
   requests: { bufferSize: number; idHeader: string; headers: RequestHeadersMode };
   serverInfo: { name: string; version: string };
 }
@@ -147,6 +175,33 @@ function positiveInteger(value: number | undefined, fallback: number, option: st
 }
 
 const HEADER_MODES: readonly RequestHeadersMode[] = ['none', 'names', 'full'];
+const LOG_CAPTURES: readonly LogCapture[] = ['nest', 'sink', 'both'];
+
+function resolveLogs(logs: NestMcpLogsOptions | undefined): ResolvedNestMcpOptions['logs'] {
+  const capture = logs?.capture ?? 'both';
+  if (!LOG_CAPTURES.includes(capture)) {
+    throw new Error(
+      `NestMcpModule: \`logs.capture\` must be one of ${LOG_CAPTURES.join(', ')}, got ${String(capture)}.`,
+    );
+  }
+  if (logs?.sink !== undefined && !isLogSink(logs.sink)) {
+    throw new Error('NestMcpModule: `logs.sink` must be what `createLogSink()` returns.');
+  }
+  if (capture === 'sink' && logs?.sink === undefined) {
+    throw new Error(
+      "NestMcpModule: `logs.capture: 'sink'` needs `logs.sink`, the `createLogSink()` added to your logger.",
+    );
+  }
+  if (logs?.normalize !== undefined && typeof logs.normalize !== 'function') {
+    throw new Error('NestMcpModule: `logs.normalize` must be a function `(record) => entry`.');
+  }
+  return {
+    bufferSize: positiveInteger(logs?.bufferSize, DEFAULT_LOGS_BUFFER_SIZE, 'logs.bufferSize'),
+    capture,
+    sink: logs?.sink,
+    normalize: logs?.normalize,
+  };
+}
 
 /** Every default applied, `path` normalised and the values checked. */
 export function resolveOptions(
@@ -174,13 +229,7 @@ export function resolveOptions(
     authorize: options.authorize,
     scope,
     tools,
-    logs: {
-      bufferSize: positiveInteger(
-        options.logs?.bufferSize,
-        DEFAULT_LOGS_BUFFER_SIZE,
-        'logs.bufferSize',
-      ),
-    },
+    logs: resolveLogs(options.logs),
     requests: {
       bufferSize: positiveInteger(
         options.requests?.bufferSize,

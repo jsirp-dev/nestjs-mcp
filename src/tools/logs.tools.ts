@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import { isGraphUnavailable } from '../graph/model.js';
 import { describeScope, type AnswerScope, type InstanceScope } from '../instance/scope.js';
-import type { LogTee } from '../logs/log-tee.js';
-import { LOG_LEVELS, type LogEntry, type LogLevel } from '../logs/model.js';
+import type { LogsInspector } from '../logs/install-logs.js';
+import {
+  LOG_LEVELS,
+  LOG_SOURCES,
+  type LogEntry,
+  type LogLevel,
+  type LogSource,
+} from '../logs/model.js';
 import { ToolError, type ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
 
@@ -15,6 +21,7 @@ export interface LogsTailInput {
   minLevel?: LogLevel;
   context?: string;
   contains?: string;
+  source?: LogSource;
   sinceSeq?: number;
   scope?: 'instance' | 'app';
 }
@@ -48,15 +55,21 @@ function contextsInScope(context: ToolContext, scope: InstanceScope): ReadonlySe
   return names;
 }
 
-export function logsTail(tee: LogTee, input: LogsTailInput, contexts: ReadonlySet<string> | null) {
+export function logsTail(
+  logs: Pick<LogsInspector, 'buffer'>,
+  input: LogsTailInput,
+  contexts: ReadonlySet<string> | null,
+) {
   const limit = Math.min(input.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
   const minRank = input.minLevel === undefined ? -1 : LOG_LEVELS.indexOf(input.minLevel);
   const needle = input.contains?.toLowerCase();
-  const held = input.sinceSeq === undefined ? tee.buffer.all() : tee.buffer.since(input.sinceSeq);
+  const { buffer } = logs;
+  const held = input.sinceSeq === undefined ? buffer.all() : buffer.since(input.sinceSeq);
 
   const matching = held.filter(
     (entry) =>
       (input.level === undefined || entry.level === input.level) &&
+      (input.source === undefined || entry.source === input.source) &&
       LOG_LEVELS.indexOf(entry.level) >= minRank &&
       (input.context === undefined || entry.context === input.context) &&
       (contexts === null || (entry.context !== null && contexts.has(entry.context))) &&
@@ -71,23 +84,23 @@ export function logsTail(tee: LogTee, input: LogsTailInput, contexts: ReadonlySe
   const more = paging && matching.length > limit;
   const answer: Omit<LogsTailAnswer, 'scope'> = {
     entries,
-    lastSeq: more ? entries[entries.length - 1]!.seq : tee.buffer.lastSeq,
+    lastSeq: more ? entries[entries.length - 1]!.seq : buffer.lastSeq,
     more,
   };
-  const oldest = tee.buffer.all()[0]?.seq ?? tee.buffer.lastSeq + 1;
+  const oldest = buffer.all()[0]?.seq ?? buffer.lastSeq + 1;
   if (paging && oldest - input.sinceSeq! - 1 > 0) answer.dropped = oldest - input.sinceSeq! - 1;
   return answer;
 }
 
 export function registerLogsTools(registry: ToolRegistry, context: ToolContext): void {
-  const tee = (): LogTee => {
-    if (!context.logTee) {
+  const logs = (): LogsInspector => {
+    if (!context.logs) {
       throw new ToolError(
         'logs_not_installed',
-        'The Logger tee is installed when the app finishes bootstrapping; call again once it has.',
+        'The log capture is installed when the app initialises its modules; call again once it has.',
       );
     }
-    return context.logTee;
+    return context.logs;
   };
   const level = z.enum(LOG_LEVELS);
 
@@ -95,11 +108,14 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
     name: 'logs_tail',
     description:
       "The latest entries the app wrote through Nest's Logger (whatever logger it set with " +
-      'useLogger), oldest first: seq, timestamp, level, context, message and, for errors, stack. ' +
-      'Filter by exact level, minimum level, exact context or a case-insensitive substring of the ' +
-      'message. Pass the answered lastSeq as sinceSeq to read only what came after. A module-scoped ' +
-      "instance keeps only entries whose context is a class in its scope; scope: 'app' lifts that. " +
-      "What a logger writes outside Nest's Logger (pino-http request lines, for example) is not here.",
+      "useLogger; source 'nest') and, when the app attached the inspector's log sink to its own " +
+      "logger (pino, winston…), that logger's lines (source 'sink'), oldest first: seq, source, " +
+      'timestamp, level, context, message and, when known, stack. Filter by exact level, minimum ' +
+      'level, source, exact context or a case-insensitive substring of the message. Pass the ' +
+      'answered lastSeq as sinceSeq to read only what came after. A module-scoped instance keeps ' +
+      "only entries whose context is a class in its scope; scope: 'app' lifts that. Without a sink, " +
+      "what a logger writes outside Nest's Logger (pino-http request lines, for example) is not here; " +
+      'logs_levels says whether a sink is attached.',
     inputSchema: {
       limit: z
         .number()
@@ -112,6 +128,10 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
       minLevel: level.optional().describe('This level and the more severe ones'),
       context: z.string().optional().describe('Exact context, usually a class name'),
       contains: z.string().optional().describe('Case-insensitive substring of message or stack'),
+      source: z
+        .enum(LOG_SOURCES as [LogSource, ...LogSource[]])
+        .optional()
+        .describe("'nest' (Nest's Logger) or 'sink' (the app's own logger, through the sink)"),
       sinceSeq: z
         .number()
         .int()
@@ -128,7 +148,7 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
       const instanceScope = context.scope();
       const lifted = typed.scope === 'app';
       const contexts = lifted ? null : contextsInScope(context, instanceScope);
-      const answer = logsTail(tee(), typed, contexts);
+      const answer = logsTail(logs(), typed, contexts);
       return {
         scope: lifted ? { kind: 'app' } : describeScope(instanceScope),
         ...(contexts ? { scopeFilter: 'context-is-class-in-scope' as const } : {}),
@@ -140,18 +160,23 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
   registry.register('logs', {
     name: 'logs_levels',
     description:
-      "The log levels the app's logger has on (null when it cannot say) and the ring buffer the " +
-      'inspector keeps: its size, how many entries it holds and the newest seq.',
+      "The log levels Nest's logger has on (null when it cannot say, or when only the sink is " +
+      "read), what the buffer captures ('nest', 'sink' or 'both'), the ring buffer the inspector " +
+      'keeps (its size, how many entries it holds and the newest seq) and, when a log sink is ' +
+      'read, whether it is connected, how many records it received and how many failures it ' +
+      'swallowed (null without a sink).',
     handler: () => {
-      const active = tee();
+      const active = logs();
       return {
         scope: describeScope(context.scope()),
         levels: active.levels(),
+        capture: active.capture,
         buffer: {
           size: active.buffer.size,
           length: active.buffer.length,
           lastSeq: active.buffer.lastSeq,
         },
+        sink: active.sink(),
       };
     },
   });
