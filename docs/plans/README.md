@@ -25,7 +25,7 @@ verification, likely stumbles and the two-commit closure.
 | 2 | Module and provider graph, scope resolution | 🟢 Closed | [phase-02-graph.md](./phase-02-graph.md) |
 | 3 | Routes with guards, interceptors, pipes and filters | 🟢 Closed | [phase-03-routes-and-enhancers.md](./phase-03-routes-and-enhancers.md) |
 | 4 | Live logs from the app's `Logger` | 🟢 Closed | [phase-04-logs.md](./phase-04-logs.md) |
-| 5 | Request traces | ⚪ Pending | [phase-05-request-traces.md](./phase-05-request-traces.md) |
+| 5 | Request traces | 🟡 In progress | [phase-05-request-traces.md](./phase-05-request-traces.md) |
 | 6 | Events, listeners and scheduled jobs | ⚪ Pending | [phase-06-events-and-schedule.md](./phase-06-events-and-schedule.md) |
 | 6b | CI matrix and release workflow | ⚪ Pending | [phase-06b-ci-and-release.md](./phase-06b-ci-and-release.md) |
 | 7 | Host validation and first publication | ⚪ Pending | [phase-07-host-validation-and-publish.md](./phase-07-host-validation-and-publish.md) |
