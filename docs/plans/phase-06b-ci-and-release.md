@@ -16,9 +16,11 @@ exercised with `npm publish --dry-run` on a test tag (the real publish is phase 
 
 ## Prerequisites
 
-- [ ] Phase 6 closed.
+- [x] Phase 6 closed.
 - [ ] The GitHub repo exists with `main` pushed; an `NPM_TOKEN` secret (automation token, publish
       rights on `@jsirp`) added by Jorge; the npm package name free (checked in planning).
+      *(2026-10-25: repo and `main` yes, name still free (`npm view` 404); `gh secret list` is empty,
+      so `NPM_TOKEN` is still Jorge's to add before phase 7. The dry run does not need it.)*
 
 ## Closed decisions for this phase
 
@@ -65,12 +67,13 @@ the suite on Nest 10 locally, how releases happen, branch protection.
 
 ## Verification / definition of done
 
-- [ ] `ci.yml` green on `main` in all four cells (link to the run in the logbook).
-- [ ] The Nest 10 cell really runs Nest 10: the job prints `require('@nestjs/core/package.json').version`
+- [x] `ci.yml` green on `main` in all four cells (link to the run in the logbook).
+- [x] The Nest 10 cell really runs Nest 10: the job prints `require('@nestjs/core/package.json').version`
       starting with `10.`.
-- [ ] `release.yml` validated with `act` or a `v0.0.0-test` tag and `--dry-run` (then the tag deleted),
-      without publishing.
-- [ ] `yarn install --immutable` passes standalone with the committed lock.
+- [x] `release.yml` validated with `act` or a `v0.0.0-test` tag and `--dry-run` (then the tag deleted),
+      without publishing. *(Validated with a manual `workflow_dispatch` run in dry-run mode instead:
+      sessions create no tags. A `-test` tag takes the same dry-run path.)*
+- [x] `yarn install --immutable` passes standalone with the committed lock.
 
 ## Likely stumbles
 

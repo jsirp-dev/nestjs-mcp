@@ -27,7 +27,7 @@ verification, likely stumbles and the two-commit closure.
 | 4 | Live logs from the app's `Logger` | 🟢 Closed | [phase-04-logs.md](./phase-04-logs.md) |
 | 5 | Request traces | 🟢 Closed | [phase-05-request-traces.md](./phase-05-request-traces.md) |
 | 6 | Events, listeners and scheduled jobs | 🟢 Closed | [phase-06-events-and-schedule.md](./phase-06-events-and-schedule.md) |
-| 6b | CI matrix and release workflow | 🟡 In progress | [phase-06b-ci-and-release.md](./phase-06b-ci-and-release.md) |
+| 6b | CI matrix and release workflow | 🟢 Closed | [phase-06b-ci-and-release.md](./phase-06b-ci-and-release.md) |
 | 7 | Host validation and first publication | ⚪ Pending | [phase-07-host-validation-and-publish.md](./phase-07-host-validation-and-publish.md) |
 
 Legend: 🟢 closed (both commits on `main`) · 🟡 in progress · ⚪ pending.

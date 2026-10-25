@@ -13,6 +13,75 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 6b — CI matrix and release workflow (2026-10-25)
+
+**Work commit:** `713510f` (ticket #10).
+
+### Done
+
+- `.github/workflows/ci.yml` on push to `main`, pull requests and `workflow_call`: Nest `[10, 11]` ×
+  Node `[20, 22]`, `fail-fast: false`. Corepack yarn 4, yarn cache per cell, `yarn install
+  --immutable`, the Nest 10 cell `yarn add -D` of `@nestjs/{common,core,platform-express,testing}@^10`
+  at once, a step that prints `@nestjs/core`'s version and fails if its major is not the cell's, then
+  `format-check`, `lint`, `type-check`, `build`, `test`.
+- `.github/workflows/release.yml` on `v*.*.*` tags and `workflow_dispatch`: the CI workflow as
+  `needs`, then build, a tag = `v<package.json version>` check, release notes from the `## x.y.z`
+  section of `CHANGELOG.md` (required for a real publish), `npm publish --provenance --access public`
+  with `NPM_TOKEN`, and `gh release create` with those notes. A manual run with `dry-run` (the
+  default) or a tag ending in `-test` runs every step with `npm publish --dry-run`, skips the tag
+  check and creates no release.
+- README "Contributing": standalone setup, the suite on Nest 10 locally, CI, branch protection and
+  how a release is cut.
+
+### Deviations from the plan
+
+- `release.yml` was validated by a manual `workflow_dispatch` dry run, not a `v0.0.0-test` tag:
+  sessions create no tags. The `-test` tag path exists and takes the same dry-run branch.
+- The yarn cache is `actions/cache` over `yarn config get cacheFolder`, not `setup-node`'s
+  `cache: yarn`: that one needs yarn on the PATH before corepack is enabled for the matrix Node.
+- `yarn.lock` and the `package.json` fields `repository`, `bugs`, `homepage` were already in place
+  from phase 1: nothing to create there.
+- No code of earlier phases needed changes: the Nest 10 cells were green on their first run.
+
+### Hot decisions
+
+- `ci.yml` is also a reusable workflow (`workflow_call`), so the release runs exactly the same
+  matrix; its `push` trigger is limited to `main`, so a tag push runs CI once, inside the release.
+- The Nest 10 step sets `YARN_ENABLE_IMMUTABLE_INSTALLS=false`: yarn makes every install immutable
+  on CI, and `yarn add` changes the lock (in that job's workspace only).
+
+### Stumbles and resolutions
+
+- Yarn 4 does not run `pre*` scripts: `yarn test` never runs `pretest` (`yarn build`). In a clean
+  checkout every suite fails with "Could not locate module @jsirp/nestjs-mcp mapped as
+  dist/index.cjs". CI and the README build first; `pretest` is left as is (it still works for
+  `npm test`).
+- Pushing `.github/workflows/` needed no `workflow` scope: git pushes over SSH.
+
+### Critical information for later phases
+
+- **Phase 7**: `gh secret list` is empty: `NPM_TOKEN` must be added before the first tag, and
+  branch protection on `main` (the four `ci (Nest N, Node M)` checks) is still to be set. The first
+  real release needs a `## 0.1.0` section above the logbook, or the workflow fails before publishing.
+- Nest 10 was verified on 10.4.22 (the `'*'` middleware path, `addGlobalInterceptor`, the graph
+  metadata, `Logger.staticInstanceRef`, event-emitter 3 and schedule 6): the full suite passes there.
+- GitHub warns that `actions/checkout@v4`, `setup-node@v4` and `cache@v4` target Node 20 and are
+  forced onto Node 24; bumping the action majors is a cleanup.
+
+### Verification
+
+- `yarn test` at start: 15 suites, 164 tests green (Nest 11.2.8, Node 20).
+- Local Nest 10 run in a scratch copy (`yarn add -D` of the four packages, `@nestjs/core` 10.4.22):
+  `format-check`, `lint`, `type-check` exit 0; `yarn build && yarn jest`: 15 suites, 164 tests green.
+- CI on `713510f`: <https://github.com/jsirp-dev/nestjs-mcp/actions/runs/40159758920>, four cells
+  green; the version step prints `@nestjs/core 10.4.22` in both Nest 10 cells and `11.2.8` in the
+  Nest 11 ones; each cell: 15 suites, 164 tests.
+- Release dry run: <https://github.com/jsirp-dev/nestjs-mcp/actions/runs/40159850065>, the four CI
+  cells then `publish` green; `npm publish --provenance --access public --dry-run` printed
+  `+ @jsirp/nestjs-mcp@0.0.0 (dry-run)`; tag check and GitHub release skipped. Afterwards
+  `npm view @jsirp/nestjs-mcp` is a 404, `git tag -l` and `gh release list` are empty.
+- `yarn install --immutable` standalone: exit 0. `npm pack --dry-run`: 10 files, 218.0 kB.
+
 ## Phase 6 — Events, listeners and scheduled jobs (2026-10-25)
 
 **Work commits:** `c72c28d` (ticket #8, events), `9449ed5` (ticket #9, schedule).
