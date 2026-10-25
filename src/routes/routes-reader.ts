@@ -73,6 +73,23 @@ function without(enhancers: Enhancer[], names: string[]): Enhancer[] {
   });
 }
 
+/**
+ * Whether a middleware's class is the one Nest builds around a function middleware. Nest 10 and 11
+ * (`mapToClass` in `middleware/utils`) wrap the function in an anonymous class that sets `use` in
+ * its constructor and name it with `uid(21)`; the function is only in that closure, so its own name
+ * cannot be read back. A class middleware keeps its name, and `use` on its prototype.
+ */
+function isFunctionalMiddleware(token: unknown): boolean {
+  if (typeof token !== 'function') return false;
+  const prototype = (token as { prototype?: { use?: unknown } }).prototype;
+  return typeof prototype?.use !== 'function' && /^[0-9a-f]{21}$/.test(token.name);
+}
+
+/** The stable stand-in for a function middleware: the module whose `configure` applied it. */
+function functionalMiddlewareName(module: string | undefined): string {
+  return module ? `<functional middleware from ${module}>` : '<functional middleware>';
+}
+
 function normalize(path: string): string {
   const trimmed = `/${path.replace(/^\/+/, '')}`.replace(/\/+$/, '');
   return trimmed || '/';
@@ -182,13 +199,17 @@ export class RoutesReader {
         middlewares: [],
       };
       if (version !== undefined) route.version = version;
-      route.middlewares = [
-        ...new Set(
-          middlewares
-            .filter((item) => middlewareMatches(item, route))
-            .map((item) => item.className),
-        ),
-      ];
+      const matched = new Map<string, string>();
+      for (const item of middlewares.filter((entry) => middlewareMatches(entry, route))) {
+        const functional = isFunctionalMiddleware(json?.nodes?.[item.classNodeId]?.metadata?.token);
+        // A class once by its name; each function middleware once, as there is no name to merge on.
+        const key = functional ? `#${item.classNodeId}` : item.className;
+        if (matched.has(key)) continue;
+        const from = model.classes[item.classNodeId]?.module;
+        const module = from === undefined ? undefined : model.modules[from]?.name;
+        matched.set(key, functional ? functionalMiddlewareName(module) : item.className);
+      }
+      route.middlewares = [...matched.values()];
       routes.push(route);
     }
     return routes;

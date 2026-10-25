@@ -173,6 +173,27 @@ describe('routes tools', () => {
     ).toEqual([]);
   });
 
+  it('marks function middlewares instead of naming them by the random token Nest gives them', async () => {
+    const client = await boot({ middleware: true, functionalMiddleware: true });
+    const route = async (path: string) =>
+      (await call(client, 'route_get', { method: 'GET', path })).json.route as Json;
+    // An arrow function and a named one (`stampRequest`): Nest keeps neither name.
+    expect((await route('/cats/:id')).middlewares.sort()).toEqual([
+      '<functional middleware from FunctionalMiddlewareModule>',
+      '<functional middleware from FunctionalMiddlewareModule>',
+      'TraceMiddleware',
+    ]);
+  });
+
+  it("marks nestjs-pino's two function middlewares as functional, from its LoggerModule", async () => {
+    const client = await boot({ pino: true });
+    const { route } = (await call(client, 'route_get', { method: 'GET', path: '/cats/:id' })).json;
+    expect(route.middlewares).toEqual([
+      '<functional middleware from LoggerModule>',
+      '<functional middleware from LoggerModule>',
+    ]);
+  });
+
   it('matches middlewares by the version of the route they were bound to', async () => {
     const client = await boot({
       middleware: true,

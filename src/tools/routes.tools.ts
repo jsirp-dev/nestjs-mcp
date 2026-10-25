@@ -110,7 +110,8 @@ export function registerRoutesTools(registry: ToolRegistry, context: ToolContext
       'its controller, handler, module and version, and the guards, interceptors, pipes (with the ' +
       'parameter they transform) and exception filters Nest runs on it, each with its level, in ' +
       'execution order global → controller → method. Filters are listed in that order too, but ' +
-      'Nest tries them the other way round. middlewares are matched by path, approximately.',
+      'Nest tries them the other way round. middlewares are matched by path, approximately; a ' +
+      'function middleware has no name Nest keeps, so it reads <functional middleware from Module>.',
     inputSchema: {
       method: z.string().describe('HTTP method, e.g. GET'),
       path: z.string().describe('Full or raw path with Nest parameters, e.g. /api/cats/:id'),

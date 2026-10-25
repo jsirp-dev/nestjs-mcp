@@ -227,9 +227,13 @@ controller handlers are ordinary routes; one served by a middleware of its own i
 - **Filters are listed in the same order but resolved the other way round**: Nest tries the
   method's filters first, then the controller's, then the globals, and the first whose `@Catch`
   matches handles the exception.
-- `middlewares` are the classes whose `forRoutes` path and method match the route's raw path.
+- `middlewares` are the middlewares whose `forRoutes` path and method match the route's raw path.
   Plain paths match exactly; wildcards match by the prefix before them, and `exclude(...)` is not
   read, so the list is approximate (`route_get` says so in `middlewaresMatch`).
+- A function middleware (`consumer.apply((req, res, next) => next())`, or `nestjs-pino`'s two)
+  reads `<functional middleware from LoggerModule>`, after the module whose `configure` applied
+  it. Nest wraps the function in a class with a random name and keeps the function only in a
+  closure, so its own name cannot be read. Each one is listed once.
 
 ### Logs
 

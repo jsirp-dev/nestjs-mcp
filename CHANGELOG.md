@@ -13,6 +13,56 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Function middlewares named instead of Nest's random token (ticket #21, 2026-10-25)
+
+#### Done
+
+- `route_get.middlewares` lists a function middleware (`consumer.apply((req, res, next) => next())`,
+  a named function, `nestjs-pino`'s two) as `<functional middleware from Module>`, after the module
+  whose `configure` applied it (`<functional middleware>` if that module is not in the graph), instead
+  of the 21-character token Nest names its class with. Class middlewares keep their name.
+- Each function middleware is listed once per route; two of them no longer depend on their tokens to
+  stay apart. A class is still listed once by its name, as before.
+- The shape of `middlewares` is unchanged (`string[]`): not a breaking change.
+- README (`route_get` notes), the `route_get` description, `RouteModel.middlewares`.
+
+#### Hot decisions
+
+- **The function's own name cannot be recovered without running the app's code**: in Nest 10.4.22
+  and 11.2.8 alike, `MiddlewareConfigProxy.forRoutes` passes the list through `filterMiddleware`,
+  whose `mapToClass` wraps each function in an anonymous class that sets `use` in its constructor
+  (a closure over the function) and names it with `uid(21)`. Only the wrapped classes are kept, in the
+  builder's configurations and the middleware container; the original function is reachable only from
+  that closure. Reading it would mean instantiating the class and calling `use`, or patching
+  `MiddlewareConsumer`, both ruled out, so the issue's stable marker is used, with the module added
+  (it tells a third-party middleware from the app's own).
+- **How a function middleware is told apart**: its graph node's token is a class without `use` on the
+  prototype whose name is 21 hex characters. A class middleware has `use` on its prototype (a
+  `MiddlewareHost` from `exclude()` too); one that declares `use` as a field still keeps its own name.
+
+#### Stumbles and resolutions
+
+- **Order across majors**: the entrypoints come out of the graph grouped by middleware, not in the
+  order Nest runs them, and Nest 10 and 11 interleave them differently. Already so before this change;
+  the new tests sort before comparing.
+
+#### Notes for the next session
+
+- `graph_module` / `graph_class` still show a function middleware's class by its random label; the
+  same detection would apply there.
+
+#### Verification
+
+`test/routes.spec.ts`, 2 new tests, both red before the change (random tokens in the list):
+`FunctionalMiddlewareModule` (fixture `functionalMiddleware: true`: an arrow function and the named
+`stampRequest`, `forRoutes('*')`) next to `TraceMiddleware` gives two
+`<functional middleware from FunctionalMiddlewareModule>` and `TraceMiddleware`; `nestjs-pino`'s
+`LoggerModule.forRoot()` (fixture `pino: true`) gives two `<functional middleware from LoggerModule>`.
+A repro script on `dist/index.cjs` (an arrow, a named function and `nestjs-pino`) gives four markers,
+two per module, on Nest 11.2.8 and 10.4.22. `yarn format-check`, `yarn lint`, `yarn type-check`,
+`yarn build`, `yarn test` (26 suites / 304 tests) green on Nest 11.2.8 and on Nest 10.4.22 (scratch
+copy).
+
 ### Implicit global-module links out of `imports` and cycles (ticket #14, 2026-10-25)
 
 #### Done

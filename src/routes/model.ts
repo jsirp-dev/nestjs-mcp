@@ -27,6 +27,9 @@ export interface RouteModel {
   pipes: Enhancer[];
   /** Listed in the same order; Nest tries them the other way round (method first, global last). */
   filters: Enhancer[];
-  /** Middleware classes whose `forRoutes` path matches; approximate for wildcards. */
+  /**
+   * Middlewares whose `forRoutes` path matches; approximate for wildcards. A class by its name; a
+   * function middleware as `<functional middleware from Module>`, the module that applied it.
+   */
   middlewares: string[];
 }

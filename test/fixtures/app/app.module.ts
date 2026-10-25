@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
+import { LoggerModule } from 'nestjs-pino';
 import {
   NestMcpModule,
   type NestMcpFeatureOptions,
@@ -13,7 +14,7 @@ import { AppGuard } from './global.guards.js';
 import { globalsFixture } from './globals.module.js';
 import { HealthModule } from './health.module.js';
 import { LoggedModule } from './logged.module.js';
-import { TraceModule } from './trace.middleware.js';
+import { FunctionalMiddlewareModule, TraceModule } from './trace.middleware.js';
 import { RunsModule } from './runs.module.js';
 import { UploadFeatureModule } from './upload.module.js';
 import { WrappedModule } from './wrapped.module.js';
@@ -39,6 +40,10 @@ export interface FixtureAppOptions {
   appGuard?: boolean;
   /** Apply `TraceMiddleware` to the cats routes. */
   middleware?: boolean;
+  /** Apply an arrow-function middleware and a named function middleware to every route. */
+  functionalMiddleware?: boolean;
+  /** Import `nestjs-pino`'s `LoggerModule.forRoot`, which applies two function middlewares. */
+  pino?: boolean;
   /** Provide `OwnerGuard` (injects `OwnersService`) as an `APP_GUARD` from `CatsModule`. */
   ownerGuard?: boolean;
   /** Provide `RequestScopedInterceptor` as a request-scoped `APP_INTERCEPTOR`. */
@@ -94,6 +99,8 @@ export class AppModule {
         }),
         ...inspector,
         ...(options.middleware ? [TraceModule] : []),
+        ...(options.functionalMiddleware ? [FunctionalMiddlewareModule] : []),
+        ...(options.pino ? [LoggerModule.forRoot({ pinoHttp: { level: 'silent' } })] : []),
         ...(options.health ? [HealthModule] : []),
         ...(options.wrapped ? [WrappedModule] : []),
         ...(options.logged ? [LoggedModule] : []),

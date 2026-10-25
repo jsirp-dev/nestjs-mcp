@@ -15,3 +15,21 @@ export class TraceModule implements NestModule {
     consumer.apply(TraceMiddleware).forRoutes(CatsController);
   }
 }
+
+/** A named function middleware: Nest wraps it in a class and gives that class a random name. */
+export function stampRequest(_request: unknown, _response: unknown, next: () => void): void {
+  next();
+}
+
+/**
+ * Applies an arrow-function middleware and `stampRequest` to every route. Imported only when the
+ * fixture asks for it.
+ */
+@Module({})
+export class FunctionalMiddlewareModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply((_request: unknown, _response: unknown, next: () => void) => next(), stampRequest)
+      .forRoutes('*');
+  }
+}
