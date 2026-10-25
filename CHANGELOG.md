@@ -13,6 +13,81 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 3 — Routes with their guards, interceptors, pipes and filters (2026-10-25)
+
+**Work commit:** `d398e8d` (ticket #5).
+
+### Done
+
+- `RoutesReader` and the route model (`src/routes/`): every `http-endpoint` entrypoint of the
+  serialized graph whose controller's module is in scope, with `path`, `rawPath`, `version`,
+  controller, handler, module, guards, interceptors, pipes, filters and matching middlewares.
+- `routes_list` (filters `filter`, `method`, `controller`, `module`) and `route_get` (full or raw
+  path), switched by `tools.routes`; `snapshot_disabled` without a graph, `not_found` with up to five
+  `METHOD path` candidates.
+- Enhancers in execution order: `global` (`ApplicationConfig`: `useGlobalX` instances and static
+  `APP_X` providers, then request-scoped `APP_X`), `controller` and `method` (the controller node's
+  `enhancers` in the graph), then parameter pipes with `param` (route-arguments metadata).
+- Fixture: opt-in `APP_GUARD` (`appGuard`), `useGlobalGuards` and `setGlobalPrefix` options in the
+  harness, and a `TraceMiddleware` on the cats routes (`middleware`). `test/routes.spec.ts`,
+  `test/full-path.spec.ts`; "Routes and enhancers" section in the README.
+
+### Deviations from the plan
+
+- **The full path is Nest's, not recomputed.** The `http-endpoint` entrypoint's `metadata.path` is
+  the output of Nest's own `RoutePathFactory`: prefix, `exclude` and URI version already applied,
+  one entrypoint per version path. `src/routes/full-path.ts` does the reverse (`rawPath`) and
+  resolves the version, so `exclude` is honoured by construction.
+- **No `Reflector` and no `ModulesContainer`.** The controller class is the raw `metadata.token` of
+  its graph node, and the parameter pipes are read with `Reflect.getMetadata` on it.
+- **`RoutesReader` is not a Nest provider**: it lives on `ToolContext.routes`, like `GraphReader`,
+  so `nest-mcp.module.ts` did not change.
+- **The graph lists parameter pipes among the method's enhancers**, with nothing to tell them from
+  `@UsePipes`. The reader removes, by name, one method-level pipe per parameter pipe and appends the
+  parameter pipes after the rest, the order Nest runs them.
+
+### Hot decisions
+
+- `version` is `string | string[]`: a list only for header, media-type or custom versioning, where
+  one registered path serves several versions. URI versioning resolves to the one in the path.
+- `route_get` answers `ambiguous` with the full paths when a raw path matches several routes (one
+  per version), and adds `middlewaresMatch: 'approximate'` next to the route.
+- A parameter pipe on an argument without a name (`@Body(ValidationPipe)`) has `param: '#<index>'`.
+- Middlewares match by method, by the version Nest recorded for them, and by raw path: exact for
+  plain paths, by the prefix before a wildcard otherwise. `exclude(...)` on a middleware is not read.
+- `SNAPSHOT_HINT` and `similar` are exported from `graph.tools.ts` and shared with the routes group.
+
+### Stumbles and resolutions
+
+- Middleware entrypoints carry the raw `forRoutes` path with a trailing slash (`/cats/`), no prefix
+  and the route's version; route entrypoints carry the full path. Both are normalised before
+  comparing.
+- `ApplicationConfig.getGlobalGuards()` already holds static `APP_GUARD` instances (Nest adds them
+  at scan time, before `useGlobalGuards` runs), so the two lists need no merge: that array is the
+  order Nest runs them. The graph's `global: true` nodes are not needed for routes.
+- An `exclude` entry is tested by Nest without the version segment and with a leading slash; the
+  reverse check in `rawPath` does the same.
+- `npx prettier` resolves a different Prettier than the project's: use `yarn prettier`.
+
+### Critical information for later phases
+
+- **Phase 5** can find a handler's route through `RoutesReader.read(scope)` (`controller`,
+  `handler`) and its enhancer names and levels; instances are not in the model.
+- **Phase 6b**: the entrypoint shape was read on Nest 11 only. The Nest 10 leg of the matrix is the
+  first check that `metadata.path`, `controllerVersion` and middleware entrypoints look the same.
+- **Phase 7**: RPC layers that serve procedures through middleware instead of controller handlers do
+  not appear in `routes_list`; that is expected, not a bug.
+- Not covered by a test: request-scoped global enhancers (`getGlobalRequestGuards`, named by their
+  wrapper's `metatype`), a raw path served by several URI versions in one app, and global pipes,
+  interceptors and filters (same code path as guards).
+
+### Verification
+
+- `yarn build && yarn test`: 8 suites, 84 tests green (61 at start, before any change).
+- `test/routes.spec.ts`: 14 tests green, with prefix only, prefix plus URI versioning, `exclude`,
+  globals, middlewares, `forFeature` scope, `snapshot: false` and the group switched off.
+- `yarn lint`, `yarn type-check`, `yarn format-check` and `sh .husky/pre-commit`: exit 0.
+
 ## Phase 2 — Module and provider graph, scope resolution (2026-10-25)
 
 **Work commits:** `833a505` (ticket #3), `3c7bd7d` (ticket #4).
