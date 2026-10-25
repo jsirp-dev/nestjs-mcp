@@ -186,7 +186,9 @@ Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in 
    absolute rule (owner's decision, 2026-10-24). Loopback binding by default; `authorize(req)` for
    anything else; listening beyond loopback without it warns and starts.
 5. **Inspector only.** Never business tools; tools only, text JSON answers; internal registry
-   ([ADR-0003](../adr/0003-inspector-only-never-business-tools.md)).
+   ([ADR-0003](../adr/0003-inspector-only-never-business-tools.md)). Under `debug` it may read the
+   app's local variables at a throw, never evaluate anything in it
+   ([ADR-0005](../adr/0005-local-variables-read-under-debug.md)).
 6. **Configuration through `ConfigurableModuleBuilder`** with `forRoot`, `forRootAsync`, `forFeature`,
    `forFeatureAsync`. `@nestjs/config` is documented as an example, never required.
 7. **Scope = app or module closure**, resolved at bootstrap from the graph.
@@ -206,7 +208,10 @@ Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in 
     `REQUEST` and `TRANSIENT` providers have no instance to wrap and are reported as not traced
     ([ADR-0002](../adr/0002-request-tracing-by-wrapping-enhancers.md)).
 11. **Traces store the full URL**; request headers per the `requests.headers` option; bodies never.
-    The correlation header is read from the request and never echoed back.
+    The correlation header is read from the request and never echoed back. One exception, under
+    `debug` only: the values of local variables at a throw, bounded, which may hold what a body
+    carried ([ADR-0005](../adr/0005-local-variables-read-under-debug.md), ticket
+    [#26](https://github.com/jsirp-dev/nestjs-mcp/issues/26)).
 12. **Optional peers detected at runtime**: `@nestjs/event-emitter` and `@nestjs/schedule` are loaded
     with a guarded `require`; without them their tools are not registered. `events_recent` wraps
     `emit`/`emitAsync` to record emissions without payloads.
