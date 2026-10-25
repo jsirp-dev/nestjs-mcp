@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { NestMcpModule, type NestMcpFeatureOptions } from '@jsirp/nestjs-mcp';
 import { CatsModule } from './cats/cats.module.js';
 import { AppGuard } from './global.guards.js';
@@ -31,6 +32,8 @@ export interface FixtureAppOptions {
   health?: boolean;
   /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
   events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];
+  /** Import `ScheduleModule.forRoot`, which schedules the fixture's decorated jobs. */
+  schedule?: boolean;
 }
 
 @Module({})
@@ -58,6 +61,7 @@ export class AppModule {
         ...(options.events
           ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]
           : []),
+        ...(options.schedule ? [ScheduleModule.forRoot()] : []),
       ],
       providers: options.appGuard ? [{ provide: APP_GUARD, useClass: AppGuard }] : [],
     };

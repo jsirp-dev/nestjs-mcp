@@ -4,6 +4,7 @@ import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
 import type { EventsInspector } from '../events/install-events.js';
+import type { ScheduleInspector } from '../schedule/install-schedule.js';
 import type { LogTee } from '../logs/log-tee.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
@@ -43,6 +44,12 @@ export interface ToolContext {
    * `undefined` otherwise, and then the group is not registered.
    */
   events: EventsInspector | undefined;
+  /**
+   * The app's `SchedulerRegistry`, set in `configure` of the instance's module when the `schedule`
+   * group is on, `@nestjs/schedule` is installed and the app imports its module; `undefined`
+   * otherwise, and then the group is not registered.
+   */
+  schedule: ScheduleInspector | undefined;
   /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
@@ -72,6 +79,7 @@ export function createToolContext(
     logTee: undefined,
     traces: undefined,
     events: undefined,
+    schedule: undefined,
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;

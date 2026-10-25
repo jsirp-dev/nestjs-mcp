@@ -1,11 +1,10 @@
 import { z } from 'zod';
-import { isGraphUnavailable } from '../graph/model.js';
 import { describeScope, inScope, type AnswerScope } from '../instance/scope.js';
 import type { EventsInspector } from '../events/install-events.js';
 import { readListeners } from '../events/listeners-reader.js';
 import type { EmissionRecord, EventListenerModel } from '../events/model.js';
-import type { ContainerModuleLike } from '../support/for-each-instance.js';
 import type { Sequenced } from '../support/ring-buffer.js';
+import { moduleNamer } from './module-name.js';
 import { ToolError, type ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
 
@@ -44,17 +43,6 @@ export function registerEventsTools(registry: ToolRegistry, context: ToolContext
     return context.events;
   };
 
-  /** The graph name of a container module, which is what the scope holds. */
-  const moduleName = (): ((module: ContainerModuleLike) => string) => {
-    const model = context.graph.read();
-    return (module) =>
-      (!isGraphUnavailable(model) && module.id !== undefined
-        ? model.modules[module.id]?.name
-        : undefined) ??
-      module.name ??
-      'unknown';
-  };
-
   registry.register('events', {
     name: 'events_listeners',
     description:
@@ -76,7 +64,7 @@ export function registerEventsTools(registry: ToolRegistry, context: ToolContext
       const typed = input as { event?: string; scope?: 'instance' | 'app' };
       const active = events();
       const instanceScope = typed.scope === 'app' ? { kind: 'app' as const } : context.scope();
-      const listeners = readListeners(active.container, moduleName())
+      const listeners = readListeners(active.container, moduleNamer(context.graph))
         .filter((listener) => inScope(instanceScope, listener.module))
         .filter(
           (listener) => typed.event === undefined || names(active, listener.event, typed.event),

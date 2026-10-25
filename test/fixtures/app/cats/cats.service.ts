@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { Cron, Interval } from '@nestjs/schedule';
 import { OwnersService } from '../owners/owners.service.js';
 
 export interface Cat {
@@ -33,6 +34,17 @@ export class CatsService {
   /** A wildcard pattern: it matches `cat.adopted` only when the emitter has `wildcard: true`. */
   @OnEvent('cat.*', { async: true })
   onAnyCatEvent(_event: unknown): void {}
+
+  /** Scheduled only when the app imports `ScheduleModule`; never runs within a test. */
+  @Cron('0 3 * * *', { name: 'cleanup' })
+  cleanup(): void {}
+
+  /** An unnamed cron: the registry knows it by a generated name, matched back by expression. */
+  @Cron('0 4 * * 0')
+  weeklyReport(): void {}
+
+  @Interval('refresh', 3_600_000)
+  refresh(): void {}
 
   private present(cat: { id: number; name: string; ownerId: number }): Cat {
     return { id: cat.id, name: cat.name, owner: this.owners.findById(cat.ownerId)?.name ?? null };

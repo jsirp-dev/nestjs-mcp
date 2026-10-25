@@ -86,14 +86,15 @@ checks `tools/list` has no `events_*` or `schedule_*`. Sections in the README.
 
 ## Verification / definition of done
 
-- [ ] The three specs green. #8: `events.spec.ts` and `without-peers.spec.ts` green; `schedule.spec.ts`
-      and the schedule half of `without-peers.spec.ts` are #9's.
-- [ ] Without the peers (simulate with `jest.mock` making `tryRequire` return `null`), the module boots
-      and registers nothing of the group. #8: events done (`jest.mock('@nestjs/event-emitter')` throws,
-      so `tryRequire` returns `null`, with a look-alike `EventEmitter2` provider in the app); schedule
-      in #9.
+- [x] The three specs green. #8: `events.spec.ts` and `without-peers.spec.ts` green; #9:
+      `schedule.spec.ts` (12) and the schedule half of `without-peers.spec.ts` green.
+- [x] Without the peers (simulate with `jest.mock` making `tryRequire` return `null`), the module boots
+      and registers nothing of the group. #8: events (`jest.mock('@nestjs/event-emitter')` throws,
+      so `tryRequire` returns `null`, with a look-alike `EventEmitter2` provider in the app); #9:
+      schedule, the same way with a look-alike `SchedulerRegistry` (a control run without the mock
+      lists `schedule_jobs`).
 - [x] Wrapped `emit` returns exactly what it returned (boolean) and `emitAsync` the same promise.
-- [ ] `yarn build`, `lint`, `type-check` green. Green at #8's commit; re-check at #9's.
+- [x] `yarn build`, `lint`, `type-check` green. Green at #8's commit and at #9's.
 
 ## Likely stumbles
 

@@ -132,7 +132,7 @@ dependencies must come from a global module or, in the async variants, from `imp
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
 | `requests` | `requests_list`, `request_trace` | ✅ |
 | `events` | `events_listeners`, `events_recent` (only with `@nestjs/event-emitter` and its module) | ✅ |
-| `schedule` | `schedule_jobs` | planned |
+| `schedule` | `schedule_jobs` (only with `@nestjs/schedule` and its module) | ✅ |
 
 Every tool returns JSON as a single text block. Errors come back as `{ "error": "<code>", "hint": "…" }`
 with `isError: true`, plus what helps to retry (`candidates`, for example).
@@ -296,6 +296,33 @@ no `events_*` tools and `app_info.tools.events` is `false`.
 - A `forFeature` instance lists only listeners declared in its scope. Emissions have no module, so
   every instance sees all of them; one buffer of the latest 500 per emitter, shared by the instances.
 
+### Scheduled jobs
+
+With `@nestjs/schedule` installed and `ScheduleModule` imported, the inspector lists what the app's
+`SchedulerRegistry` holds. Without the package, or without its module, there is no `schedule_jobs`
+and `app_info.tools.schedule` is `false`.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `schedule_jobs` | `kind?` (`'cron'`, `'interval'` or `'timeout'`), `scope?` (`'instance'` or `'app'`) | `jobs`, each `{ kind, name, className?, methodName?, module?, expression?, timeZone?, everyMs?, delayMs?, running?, lastRun?, nextRun? }` |
+
+```jsonc
+// schedule_jobs { "kind": "cron" }, for @Cron('0 3 * * *', { name: 'cleanup' }) on CatsService
+{ "scope": { "kind": "app" }, "jobs": [{ "kind": "cron", "name": "cleanup", "className": "CatsService",
+  "methodName": "cleanup", "module": "CatsModule", "expression": "0 3 * * *", "running": true,
+  "nextRun": "2026-10-26T03:00:00.000+01:00" }] }
+```
+
+- **The registry is read on every call**: cron jobs (`expression`, `running`, `lastRun`, and
+  `nextRun` while running), intervals (`everyMs`) and timeouts (`delayMs`; `running: false` once
+  fired or cleared), the ones the app added with `addCronJob`/`addInterval`/`addTimeout` included.
+  `timeZone` appears when it differs from the process's own.
+- **Class, method and module come from the `@Cron`/`@Interval`/`@Timeout` metadata**, matched to
+  the registry by name; a decorator without a name, which the registry knows by a generated id, is
+  matched by its expression or period when exactly one job has it.
+- A `forFeature` instance lists only jobs declared by classes in its scope. A job the app added to
+  the registry by hand has no class, so only `scope: 'app'` (or a `forRoot` instance) lists it.
+
 ## How it works
 
 - **Stateless Streamable HTTP.** Each `POST` gets its own MCP server and transport, answered and closed.
@@ -312,6 +339,8 @@ no `events_*` tools and `app_info.tools.events` is `false`.
 - **Emissions by wrapping the emitter.** With the `events` group on and the app's `EventEmitter2` in
   the container, `emit` and `emitAsync` are replaced on that instance, once, by functions that record
   the event name and listener count and then call the original. Nothing else of the emitter changes.
+- **Scheduled jobs by reading the registry.** With the `schedule` group on, the module finds the
+  app's `SchedulerRegistry` and reads it per call. Nothing is wrapped, started or stopped.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling your app.
 
@@ -351,6 +380,9 @@ Opening it to the network without guards works, and logs a warning at every star
   emitter the app creates on its own, outside `EventEmitterModule`, is not observed. Listeners added
   by hand with `emitter.on(...)` count in `listeners` but are not in `events_listeners`, which reads
   `@OnEvent` metadata.
+- `schedule_jobs` lists what `SchedulerRegistry` holds: a decorated job `ScheduleModule` did not
+  register (a request-scoped provider, a kind switched off in `forRoot`) is not listed. Periods and
+  pending state of intervals and timeouts are read from Node's timer objects.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

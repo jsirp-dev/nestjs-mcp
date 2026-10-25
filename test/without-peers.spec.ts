@@ -13,9 +13,12 @@ function toolJson(result: unknown): unknown {
   return JSON.parse(block!.text);
 }
 
-// The package, as the inspector's guarded `require` sees it, is not installed.
+// The packages, as the inspector's guarded `require` sees them, are not installed.
 jest.mock('@nestjs/event-emitter', () => {
   throw new Error("Cannot find module '@nestjs/event-emitter'");
+});
+jest.mock('@nestjs/schedule', () => {
+  throw new Error("Cannot find module '@nestjs/schedule'");
 });
 
 /** Looks like the emitter `EventEmitterModule` provides, so only the missing peer keeps it out. */
@@ -35,11 +38,34 @@ class EventEmitter2 {
   }
 }
 
-@Module({ imports: [NestMcpModule.forRoot()], providers: [EventEmitter2] })
+/** Looks like the registry `ScheduleModule` provides, so only the missing peer keeps it out. */
+@Injectable()
+class SchedulerRegistry {
+  getCronJobs() {
+    return new Map();
+  }
+  getIntervals() {
+    return [];
+  }
+  getTimeouts() {
+    return [];
+  }
+  getInterval() {
+    return undefined;
+  }
+  getTimeout() {
+    return undefined;
+  }
+}
+
+@Module({
+  imports: [NestMcpModule.forRoot()],
+  providers: [EventEmitter2, SchedulerRegistry],
+})
 class BareModule {}
 
 describe('without the optional peers', () => {
-  it('boots, registers no events_* tool and app_info says events is off', async () => {
+  it('boots, registers no events_* or schedule_* tool and app_info says both are off', async () => {
     const app = await NestFactory.create(BareModule, {
       snapshot: true,
       logger: new MemoryLogger(),
@@ -55,10 +81,12 @@ describe('without the optional peers', () => {
       const names = (await client.listTools()).tools.map((tool) => tool.name);
       expect(names).toContain('app_info');
       expect(names.filter((name) => name.startsWith('events_'))).toEqual([]);
+      expect(names.filter((name) => name.startsWith('schedule_'))).toEqual([]);
       const info = toolJson(await client.callTool({ name: 'app_info', arguments: {} })) as {
         tools: Record<string, boolean>;
       };
       expect(info.tools.events).toBe(false);
+      expect(info.tools.schedule).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(app.get(EventEmitter2), 'emit')).toBe(false);
     } finally {
       await client.close();

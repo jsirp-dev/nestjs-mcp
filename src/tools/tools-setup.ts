@@ -8,6 +8,7 @@ import { registerLogsTools } from './logs.tools.js';
 import { registerRequestsTools } from './requests.tools.js';
 import { ToolRegistry } from './registry.js';
 import { registerRoutesTools } from './routes.tools.js';
+import { registerScheduleTools } from './schedule.tools.js';
 import type { ToolContext } from './tool-context.js';
 
 /**
@@ -29,9 +30,12 @@ export class NestMcpToolsSetup implements OnModuleInit {
     if (this.options.tools.routes) registerRoutesTools(this.registry, this.context);
     if (this.options.tools.logs) registerLogsTools(this.registry, this.context);
     if (this.options.tools.requests) registerRequestsTools(this.registry, this.context);
-    // Set in `configure`, which runs first; absent without the peer or its module.
+    // Both set in `configure`, which runs first; absent without the peer or its module.
     if (this.options.tools.events && this.context.events) {
       registerEventsTools(this.registry, this.context);
+    }
+    if (this.options.tools.schedule && this.context.schedule) {
+      registerScheduleTools(this.registry, this.context);
     }
   }
 }
