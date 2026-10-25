@@ -25,9 +25,9 @@ describe('routes tools', () => {
     running = undefined;
   });
 
-  async function boot(options: StartAppOptions, path = '_mcp'): Promise<Client> {
+  async function boot(options: StartAppOptions, path = '/'): Promise<Client> {
     running = await startApp(options);
-    return running.connect(options.globalPrefix ? `${options.globalPrefix}/${path}` : path);
+    return running.connect(path);
   }
 
   async function call(client: Client, name: string, args: Record<string, unknown> = {}) {
@@ -84,31 +84,23 @@ describe('routes tools', () => {
       expect(json.candidates).toContain('GET /api/cats/:id');
     });
 
-    it('lists the inspector endpoint, with LocalOnlyGuard, unless the filter leaves it out', async () => {
+    it("lists only the app's routes, never the inspector's, and filters them", async () => {
       const all = (await call(client, 'routes_list')).json.routes as Json[];
-      expect(all).toEqual(
-        expect.arrayContaining([
-          {
-            method: 'GET',
-            path: '/api/cats/:id',
-            handler: 'CatsController.findOne',
-            guards: 1,
-            interceptors: 1,
-            pipes: 1,
-            filters: 1,
-          },
-          expect.objectContaining({ method: 'POST', path: '/api/_mcp' }),
-        ]),
-      );
-      const endpoint = (await call(client, 'route_get', { method: 'POST', path: '/api/_mcp' })).json
-        .route;
-      expect(endpoint.guards).toEqual([{ name: 'LocalOnlyGuard', level: 'controller' }]);
-
-      const cats = (await call(client, 'routes_list', { filter: 'cats' })).json.routes as Json[];
-      expect(cats.map((route) => `${route.method} ${route.path}`)).toEqual([
-        'GET /api/cats',
-        'GET /api/cats/:id',
+      expect(all).toEqual([
+        expect.objectContaining({ method: 'GET', path: '/api/cats' }),
+        {
+          method: 'GET',
+          path: '/api/cats/:id',
+          handler: 'CatsController.findOne',
+          guards: 1,
+          interceptors: 1,
+          pipes: 1,
+          filters: 1,
+        },
       ]);
+
+      const cats = (await call(client, 'routes_list', { filter: 'cats/:' })).json.routes as Json[];
+      expect(cats.map((route) => `${route.method} ${route.path}`)).toEqual(['GET /api/cats/:id']);
     });
 
     it('filters by method, controller and module', async () => {
@@ -116,7 +108,7 @@ describe('routes tools', () => {
         ((await call(client, 'routes_list', args)).json.routes as Json[]).map(
           (route) => `${route.method} ${route.path}`,
         );
-      expect(await paths({ method: 'post' })).toEqual(['POST /api/_mcp']);
+      expect(await paths({ method: 'post' })).toEqual([]);
       expect(await paths({ controller: 'CatsController' })).toEqual([
         'GET /api/cats',
         'GET /api/cats/:id',
@@ -144,10 +136,6 @@ describe('routes tools', () => {
       expect(
         (await call(client, 'route_get', { method: 'GET', path: '/cats/:id' })).json.route.path,
       ).toBe('/api/v1/cats/:id');
-
-      const endpoint = (await call(client, 'route_get', { method: 'POST', path: '/api/_mcp' })).json
-        .route;
-      expect(endpoint).toMatchObject({ path: '/api/_mcp', rawPath: '/_mcp', version: 'neutral' });
     });
   });
 
@@ -175,13 +163,13 @@ describe('routes tools', () => {
   });
 
   it('lists the middlewares whose forRoutes path matches', async () => {
-    const client = await boot({ middleware: true });
+    const client = await boot({ middleware: true, health: true });
     const route = async (path: string) =>
       (await call(client, 'route_get', { method: 'GET', path })).json.route as Json;
     expect((await route('/cats/:id')).middlewares).toEqual(['TraceMiddleware']);
     expect((await route('/cats')).middlewares).toEqual(['TraceMiddleware']);
     expect(
-      (await call(client, 'route_get', { method: 'POST', path: '/_mcp' })).json.route.middlewares,
+      (await call(client, 'route_get', { method: 'GET', path: '/health' })).json.route.middlewares,
     ).toEqual([]);
   });
 
@@ -196,14 +184,14 @@ describe('routes tools', () => {
   });
 
   it('lists, in a forFeature instance, only the routes of its scope', async () => {
-    const client = await boot({ catsInspector: true }, CATS_INSPECTOR_PATH);
+    const client = await boot({ catsInspector: true, health: true }, CATS_INSPECTOR_PATH);
     const { json } = await call(client, 'routes_list');
     expect(json.scope).toEqual({ kind: 'module', module: 'CatsModule' });
     expect((json.routes as Json[]).map((route) => route.handler)).toEqual([
       'CatsController.findAll',
       'CatsController.findOne',
     ]);
-    const outside = await call(client, 'route_get', { method: 'POST', path: '/_mcp' });
+    const outside = await call(client, 'route_get', { method: 'GET', path: '/health' });
     expect(outside.isError).toBe(true);
     expect(outside.json.error).toBe('not_found');
   });

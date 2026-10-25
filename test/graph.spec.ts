@@ -46,7 +46,7 @@ describe('graph tools', () => {
 
     beforeEach(async () => {
       running = await startApp();
-      client = await running.connect('_mcp');
+      client = await running.connect('/');
     });
 
     it('lists the five graph tools and reports the group live', async () => {
@@ -184,7 +184,7 @@ describe('graph tools', () => {
       // Two inspector instances, each with its own NestMcpToolsSetup.
       await running?.close();
       running = await startApp({ catsInspector: true });
-      const twoInstances = await running.connect('_mcp');
+      const twoInstances = await running.connect('/');
 
       const ambiguous = await call(twoInstances, 'graph_provider', { token: 'NestMcpToolsSetup' });
       expect(ambiguous.isError).toBe(true);
@@ -226,7 +226,7 @@ describe('graph tools', () => {
   describe('with snapshot: false', () => {
     it('answers snapshot_disabled with isError from every graph tool', async () => {
       running = await startApp({ snapshot: false });
-      const client = await running.connect('_mcp');
+      const client = await running.connect('/');
 
       expect((await call(client, 'app_info')).json.snapshot).toBe(false);
       for (const [name, args] of GRAPH_TOOLS) {
@@ -247,7 +247,7 @@ describe('graph tools', () => {
   describe('switched off', () => {
     it('registers no graph tool with tools.graph: false', async () => {
       running = await startApp({ root: { kind: 'sync', options: { tools: { graph: false } } } });
-      const client = await running.connect('_mcp');
+      const client = await running.connect('/');
       const { tools } = await client.listTools();
       expect(tools.some((tool) => tool.name.startsWith('graph_'))).toBe(false);
       expect((await call(client, 'app_info')).json.tools.graph).toBe(false);
@@ -312,7 +312,7 @@ describe('graph tools', () => {
 
     it('leaves the forRoot instance of the same app on app scope, seeing every module', async () => {
       running = await startApp({ catsInspector: true });
-      const client = await running.connect('_mcp');
+      const client = await running.connect('/');
 
       expect((await call(client, 'app_info')).json.scope).toEqual({ kind: 'app' });
       const { json } = await call(client, 'graph_modules');

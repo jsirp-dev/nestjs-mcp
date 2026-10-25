@@ -27,31 +27,22 @@ export interface TraceRecorderOptions {
   headers: RequestHeadersMode;
 }
 
-function normalizePath(path: string): string {
-  return (path.replace(/\/+$/, '') || '/').toLowerCase();
-}
-
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value.join(', ') : value;
 }
 
 /**
- * The traces of one app: a ring buffer shared by every instance mounted in it, the endpoints of
- * those instances (never traced) and the enhancer classes that cannot be traced.
+ * The traces of one app: a ring buffer shared by every instance mounted in it and the enhancer
+ * classes that cannot be traced. The inspector's own requests never reach it: they arrive on the
+ * inspector listener, not through Nest.
  */
 export class TraceRecorder {
   readonly buffer: RingBuffer<{ trace: RequestTrace }>;
-  /** Normalised paths of the inspector endpoints in this app. */
-  readonly excluded = new Set<string>();
   /** `REQUEST` and `TRANSIENT` enhancer classes, which have no instance to wrap. */
   readonly untraced = new Set<string>();
 
   constructor(readonly options: TraceRecorderOptions) {
     this.buffer = new RingBuffer(options.bufferSize);
-  }
-
-  exclude(path: string): void {
-    this.excluded.add(normalizePath(path));
   }
 
   /** Every trace held, oldest first; in-flight ones included. */
@@ -61,11 +52,10 @@ export class TraceRecorder {
 
   /**
    * Opens the trace of a request and closes it when the response finishes or the connection
-   * closes. `undefined` for an inspector endpoint. Bodies are never read.
+   * closes. Bodies are never read.
    */
-  start(request: IncomingRequestLike, response: OutgoingResponseLike): ActiveTrace | undefined {
+  start(request: IncomingRequestLike, response: OutgoingResponseLike): ActiveTrace {
     const url = request.originalUrl ?? request.url ?? '';
-    if (this.excluded.has(normalizePath(url.split('?')[0] ?? ''))) return undefined;
 
     const sent = headerValue(request.headers[this.options.idHeader])?.trim();
     const trace: RequestTrace = {

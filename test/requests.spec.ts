@@ -46,9 +46,9 @@ describe('requests tools', () => {
     running = undefined;
   });
 
-  async function boot(options: StartAppOptions = {}, path = '_mcp'): Promise<Client> {
+  async function boot(options: StartAppOptions = {}, path = '/'): Promise<Client> {
     running = await startApp(options);
-    return running.connect(options.globalPrefix ? `${options.globalPrefix}/${path}` : path);
+    return running.connect(path);
   }
 
   async function call(client: Client, name: string, args: Record<string, unknown> = {}) {

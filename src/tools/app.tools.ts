@@ -30,7 +30,10 @@ export interface AppInfo {
   uptimeSeconds: number;
   globalPrefix: string;
   versioning: AppInfoVersioning | null;
+  /** The endpoint's path on the inspector listener. */
   mcpPath: string;
+  /** The endpoint's absolute URL, what an MCP client connects to. */
+  mcpUrl: string | null;
   scope: AnswerScope;
   snapshot: boolean;
   /** Which tool groups have tools registered right now. */
@@ -76,6 +79,7 @@ export function appInfo(registry: ToolRegistry, context: ToolContext): AppInfo {
     globalPrefix: applicationConfig.getGlobalPrefix(),
     versioning: describeVersioning(applicationConfig.getVersioning()),
     mcpPath: context.mcpPath(),
+    mcpUrl: context.mcpUrl ?? null,
     scope: describeScope(context.scope()),
     snapshot: context.snapshotEnabled(),
     tools: Object.fromEntries(
@@ -93,7 +97,7 @@ export function registerAppTools(registry: ToolRegistry, context: ToolContext): 
     name: 'app_info',
     description:
       'What this NestJS app is and how this inspector is mounted: Nest and Node versions, uptime, ' +
-      'global prefix, versioning, the endpoint path, the instance scope, whether the app was ' +
+      'global prefix, versioning, the endpoint path and URL on the inspector listener, the instance scope, whether the app was ' +
       'created with snapshot: true, which tool groups are live, and the tool switches and request ' +
       'header policy this instance was given.',
     handler: () => appInfo(registry, context),

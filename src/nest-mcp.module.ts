@@ -3,12 +3,10 @@ import {
   Inject,
   Module,
   Optional,
-  type CanActivate,
   type DynamicModule,
   type MiddlewareConsumer,
   type NestModule,
   type Provider,
-  type Type,
 } from '@nestjs/common';
 import { ApplicationConfig, ModulesContainer, SerializedGraph } from '@nestjs/core';
 import {
@@ -46,9 +44,6 @@ import {
   type ToolContext,
 } from './tools/tool-context.js';
 import { NestMcpToolsSetup } from './tools/tools-setup.js';
-import { EnabledGuard } from './transport/enabled.guard.js';
-import { LocalOnlyGuard } from './transport/local-only.guard.js';
-import { createInstanceController } from './transport/nest-mcp.controller.js';
 
 /**
  * The "extras" of the configurable module: what is known when `forRoot`/`forFeature` (or their
@@ -58,7 +53,7 @@ interface InstanceExtras extends NestMcpStaticOptions {
   scope: InstanceScopeKind;
 }
 
-const STATIC_KEYS = ['enabled', 'path', 'guards', 'localOnly'] as const;
+const STATIC_KEYS = ['enabled', 'path'] as const;
 
 const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
   new ConfigurableModuleBuilder<NestMcpFactoryOptions>({ moduleName: 'NestMcp' })
@@ -68,8 +63,6 @@ const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
         scope: 'app',
         enabled: undefined,
         path: undefined,
-        guards: undefined,
-        localOnly: undefined,
       },
       (definition, extras) => defineInstance(definition, extras),
     )
@@ -94,14 +87,15 @@ function isSync(definition: DynamicModule): boolean {
 }
 
 /**
- * Turns the builder's definition into one instance: resolved options always; and, when enabled,
- * its own controller subclass, tool registry, tool context and bootstrap.
+ * Turns the builder's definition into one instance: resolved options always; and, unless a static
+ * `enabled: false` says otherwise, its tool registry, tool context and bootstrap. No controller:
+ * the instance answers on the inspector's own listener.
  */
 function defineInstance(definition: DynamicModule, extras: InstanceExtras): DynamicModule {
   const scope = extras.scope;
   const fixed = staticOptions(extras);
   // Throws now, at definition time, for `forFeature` without `path`.
-  const path = resolvePath(fixed.path, scope);
+  resolvePath(fixed.path, scope);
   // Sync: everything is known. Async: only a static `enabled` is; otherwise the factory decides.
   const enabled = fixed.enabled ?? (isSync(definition) ? defaultEnabled() : undefined);
 
@@ -113,12 +107,6 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
   };
   const providers = [...(definition.providers ?? []), optionsProvider];
   if (enabled === false) return { ...definition, providers };
-
-  const guards: Type<CanActivate>[] = [
-    ...(enabled === undefined ? [EnabledGuard] : []),
-    ...((fixed.localOnly ?? true) ? [LocalOnlyGuard] : []),
-    ...(fixed.guards ?? []),
-  ];
   // Unique per instance: its node in the serialized graph says which module is this instance's.
   const instanceToken = Symbol(NEST_MCP_INSTANCE);
   const instanceProvider: Provider = { provide: instanceToken, useValue: instanceToken };
@@ -134,7 +122,6 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
 
   return {
     ...definition,
-    controllers: [...(definition.controllers ?? []), createInstanceController(path, guards)],
     providers: [
       ...providers,
       instanceProvider,
@@ -180,7 +167,6 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
       modulesContainer: this.modulesContainer,
       applicationConfig: this.applicationConfig,
       consumer,
-      mcpPath: this.context.mcpPath(),
     });
   }
 
@@ -188,7 +174,7 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
     return super.forRoot({ ...options, scope: 'app' });
   }
 
-  /** `path`, `guards`, `localOnly` and, optionally, `enabled` go here, not in the factory. */
+  /** `path` and, optionally, `enabled` go here, not in the factory. */
   static override forRootAsync(options: NestMcpAsyncOptions): DynamicModule {
     return super.forRootAsync({ ...options, scope: 'app' });
   }

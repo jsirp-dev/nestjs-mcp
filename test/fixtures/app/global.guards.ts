@@ -14,3 +14,12 @@ export class AppGuard implements CanActivate {
     return true;
   }
 }
+
+/** Registered with `app.useGlobalGuards(new CountingGuard())`: counts every request it sees. */
+export class CountingGuard implements CanActivate {
+  calls = 0;
+  canActivate(): boolean {
+    this.calls += 1;
+    return true;
+  }
+}

@@ -5,7 +5,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { AddressInfo } from 'node:net';
 import { AppModule, FixtureAppOptions } from '../fixtures/app/app.module.js';
+import { freePort } from './free-port.js';
 import { MemoryLogger } from './memory-logger.js';
+
+export { freePort };
 
 export interface StartAppOptions extends FixtureAppOptions {
   /** `snapshot` for `NestFactory.create`. Defaults to `true`. */
@@ -18,15 +21,25 @@ export interface StartAppOptions extends FixtureAppOptions {
   versioning?: VersioningOptions;
   /** Where Nest logs go. Defaults to a `RecordingLogger`, which records and prints nothing. */
   logger?: LoggerService;
+  /**
+   * The inspector listener's port: by default a free one the harness picks; `'default'` leaves
+   * `listen` unset, so the package's default (`127.0.0.1:7777`) applies.
+   */
+  inspectorPort?: number | 'default';
 }
 
 export interface RunningApp {
   app: INestApplication;
-  /** `http://127.0.0.1:<port>` */
+  /** The app's own server: `http://127.0.0.1:<port>` */
   baseUrl: string;
   url(path: string): string;
+  /** A request to the app's own server. */
   fetch(path: string, init?: RequestInit): Promise<Response>;
-  /** An SDK client connected over Streamable HTTP to `path` (relative to the base URL). */
+  /** The inspector listener: `http://127.0.0.1:<port>` */
+  inspectorUrl: string;
+  /** A request to the inspector listener. */
+  inspect(path: string, init?: RequestInit): Promise<Response>;
+  /** An SDK client connected over Streamable HTTP to `path` on the inspector listener. */
   connect(path: string): Promise<Client>;
   close(): Promise<void>;
 }
@@ -80,9 +93,13 @@ export class RecordingLogger extends MemoryLogger {
   }
 }
 
-/** Boots the fixture app on `127.0.0.1` and a free port. */
+/** Boots the fixture app on `127.0.0.1` and a free port, and its inspector on another one. */
 export async function startApp(options: StartAppOptions = {}): Promise<RunningApp> {
-  const app = await NestFactory.create(AppModule.with(options), {
+  const inspectorPort =
+    options.inspectorPort === 'default' ? 7777 : (options.inspectorPort ?? (await freePort()));
+  const inspectorListen =
+    options.inspectorPort === 'default' ? undefined : { host: '127.0.0.1', port: inspectorPort };
+  const app = await NestFactory.create(AppModule.with({ ...options, inspectorListen }), {
     snapshot: options.snapshot ?? true,
     logger: options.logger ?? new RecordingLogger(),
     abortOnError: false,
@@ -96,15 +113,19 @@ export async function startApp(options: StartAppOptions = {}): Promise<RunningAp
   const baseUrl = `http://127.0.0.1:${port}`;
   const clients: Client[] = [];
   const url = (path: string) => `${baseUrl}/${path.replace(/^\/+/, '')}`;
+  const inspectorUrl = `http://127.0.0.1:${inspectorPort}`;
+  const inspected = (path: string) => `${inspectorUrl}/${path.replace(/^\/+/, '')}`;
 
   return {
     app,
     baseUrl,
     url,
     fetch: (path, init) => fetch(url(path), init),
+    inspectorUrl,
+    inspect: (path, init) => fetch(inspected(path), init),
     async connect(path) {
       const client = new Client({ name: 'nestjs-mcp-test', version: '0.0.0' });
-      await client.connect(new StreamableHTTPClientTransport(new URL(url(path))));
+      await client.connect(new StreamableHTTPClientTransport(new URL(inspected(path))));
       clients.push(client);
       return client;
     },

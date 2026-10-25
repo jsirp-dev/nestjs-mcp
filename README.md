@@ -2,11 +2,11 @@
 
 Runtime [MCP](https://modelcontextprotocol.io) inspector embedded in your NestJS app, for coding agents.
 
-Add one module and your running app exposes an MCP endpoint that tells an agent (Claude Code, Cursor,
+Add one module and your running app opens an MCP endpoint, on a port of its own, that tells an agent (Claude Code, Cursor,
 any MCP client) what Nest actually built: the module and provider graph, every route with the guards,
 interceptors, pipes and filters it goes through, what the app's `Logger` is writing right now, which
 enhancers a given request passed through and how long each took, event listeners and scheduled jobs.
-Nothing to install on the agent side: it points at a URL of your app.
+Nothing to install on the agent side: it points at `http://127.0.0.1:7777/`.
 
 > Status: **0.1.0 in development**. Today the endpoint, `app_info`, the graph, routes and logs work;
 > the other tool groups land one by one (see [Tools](#tools)).
@@ -40,17 +40,24 @@ Create the app with `snapshot: true` so Nest keeps the graph the `graph_*` and `
 const app = await NestFactory.create(AppModule, { snapshot: true });
 ```
 
-At startup the module logs the endpoint, with context `NestMcp`:
+At startup the module opens the inspector's own HTTP listener, next to your app's server and
+independent of it, and logs the endpoint, with context `NestMcp`:
 
 ```
-[NestMcp] Inspector endpoint at http://localhost:3000/api/_mcp
+[NestMcp] Inspector listening at http://127.0.0.1:7777/
 ```
+
+Nothing of your app runs in front of it: no global prefix, no versioning, no middlewares, no global
+guards, interceptors, pipes or filters. Your auth guard never sees an inspector call, your request
+logger never logs one, your OpenAPI document does not list it, and the inspector's calls never show
+up in its own request traces. The listener closes with the app (`app.close()`).
 
 ### One module on its own endpoint
 
 `forFeature` mounts an instance whose scope is the module that imports it and everything that module
-imports. `path` is required. Any number of instances may coexist, each with its own path, guards and
-switches.
+imports. `path` is required. Any number of instances may coexist, each with its own path,
+`authorize` and switches, all on the same listener: `forRoot` answers at `/`, each `forFeature` at its
+`path` (`http://127.0.0.1:7777/cats` below).
 
 The scope is resolved from the serialized graph at the first tool call, so it needs `snapshot: true`
 too: `app_info.scope` then reads `{ "kind": "module", "module": "CatsModule" }`. Without `snapshot`, it
@@ -59,7 +66,7 @@ closure leaves out Nest's internal modules and the instance's own module.
 
 ```ts
 @Module({
-  imports: [NestMcpModule.forFeature({ path: '_mcp/cats' })],
+  imports: [NestMcpModule.forFeature({ path: 'cats' })],
 })
 export class CatsModule {}
 ```
@@ -79,17 +86,18 @@ NestMcpModule.forRootAsync({
 });
 ```
 
-Nest reads the endpoint's route and guards before any factory runs, so **`path`, `guards` and
-`localOnly` are given statically**, next to `useFactory`, not returned by it. `enabled` may go either
-way: given statically and `false`, nothing is registered; returned by the factory as `false`, the
-endpoint answers 404, exactly as if it were not mounted, and nothing else is installed.
+**`path` is given statically**, next to `useFactory`, not returned by it, so a `forFeatureAsync`
+without it fails at once. Everything else, `listen` and `authorize` included, may come from the
+factory. `enabled` may go either way: given statically and `false`, nothing is registered; returned
+by the factory as `false`, the instance does not join the listener (with no other instance, no
+listener is opened) and nothing else is installed.
 
 ## Point your agent at it
 
 Claude Code:
 
 ```bash
-claude mcp add --transport http my-nest-app http://localhost:3000/api/_mcp
+claude mcp add --transport http my-nest-app http://127.0.0.1:7777/
 ```
 
 Or any client that reads an `mcpServers` file:
@@ -97,10 +105,13 @@ Or any client that reads an `mcpServers` file:
 ```json
 {
   "mcpServers": {
-    "my-nest-app": { "type": "http", "url": "http://localhost:3000/api/_mcp" }
+    "my-nest-app": { "type": "http", "url": "http://127.0.0.1:7777/" }
   }
 }
 ```
+
+The URL does not depend on your app's port, prefix or versioning. Two apps on one machine need two
+ports: give each its own `listen.port`.
 
 ## Options
 
@@ -108,10 +119,10 @@ All optional, except `path` in `forFeature`.
 
 | Option | Default | What it does |
 |--------|---------|--------------|
-| `enabled` | `process.env.NODE_ENV !== 'production'` | The switch. When `false` the instance registers nothing. It is a default, not a rule: set it to `true` wherever you want the endpoint and protect it with `guards`. |
-| `path` | `'_mcp'` for `forRoot`; required for `forFeature` | Route of the endpoint, relative to the app's global prefix and version-neutral under any versioning. With prefix `api`: `/api/_mcp`. |
-| `guards` | `[]` | Nest guards on the endpoint, exactly like `@UseGuards`, after `LocalOnlyGuard`. |
-| `localOnly` | `true` | Reject requests that do not come from loopback (`127.0.0.1`, `::1`). |
+| `enabled` | `process.env.NODE_ENV !== 'production'` | The switch. When `false` the instance registers nothing and opens nothing. It is a default, not a rule: set it to `true` wherever you want the inspector and protect it with `authorize`. |
+| `listen` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the app: set it on one instance, or the same on all (two different ones fail at startup). `port: 0` picks a free port; the startup log and `app_info.mcpUrl` say which. A port in use fails at startup with an error naming `listen.port`. |
+| `path` | `'/'` for `forRoot`; required for `forFeature` | Route of the instance on the listener. No prefix or versioning applies. Two instances on one path fail at startup. |
+| `authorize` | none | `(req) => boolean \| Promise<boolean>`, called with the raw Node `IncomingMessage` before each request to this instance is answered. `false`, or a throw (logged), answers 403. |
 | `tools` | all `true` | One switch per tool group: `{ graph, routes, logs, requests, events, schedule }`. A group switched off registers no tools and installs nothing. |
 | `logs.bufferSize` | `2000` | Size of the ring buffer the `Logger` tee keeps. |
 | `requests.bufferSize` | `500` | How many request traces are kept. |
@@ -119,14 +130,25 @@ All optional, except `path` in `forFeature`.
 | `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never. |
 | `serverInfo` | your app's `package.json` | `{ name, version }` the server reports in the MCP `initialize` handshake. |
 
-Guards are instantiated inside the inspector's module, like any enhancer of its controller: their
-dependencies must come from a global module or, in the async variants, from `imports`.
+`authorize` is a plain function, not a Nest guard: there is no `ExecutionContext`. Close over what
+it needs, or build it in a `forRootAsync` factory from injected services:
+
+```ts
+NestMcpModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => ({
+    listen: { host: '0.0.0.0', port: 7777 },
+    authorize: (req) => req.headers['x-inspector-key'] === config.get('INSPECTOR_KEY'),
+  }),
+});
+```
 
 ## Tools
 
 | Group | Tools | Status |
 |-------|-------|--------|
-| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
+| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path and URL (`mcpPath`, `mcpUrl`), instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
@@ -164,8 +186,8 @@ only the modules in its closure, and the providers, dependencies and cycles amon
 
 ### Routes and enhancers
 
-Every HTTP route Nest registered whose controller is in the instance's scope, the inspector's own
-endpoint included (a `forFeature` instance does not list it). Routes that an RPC layer implements as
+Every HTTP route Nest registered whose controller is in the instance's scope. The inspector is not
+one of them: it is not a controller. Routes that an RPC layer implements as
 controller handlers are ordinary routes; one served by a middleware of its own is not a route here.
 
 | Tool | Input | Answers |
@@ -268,7 +290,7 @@ TimingInterceptor exit threw`, status 400.
   `snapshot: true`, like `module`. Without it the steps are there and those fields are not.
 - A **`forFeature` instance lists only traces whose handler is in its scope**; a request that matched
   no route has no handler and is seen from app scope only. `scope: 'app'` lifts the filter.
-- The inspector's own endpoints are never traced. One ring buffer of `requests.bufferSize` traces per
+- The inspector's own calls are never traced: they arrive on its listener, not through Nest. One ring buffer of `requests.bufferSize` traces per
   app, shared by its instances; the first instance with the `requests` group on decides
   `requests.*`.
 - Enhancers in `REQUEST` or `TRANSIENT` scope have no long-lived instance to observe; a trace lists
@@ -327,8 +349,11 @@ and `app_info.tools.schedule` is `false`.
 
 - **Stateless Streamable HTTP.** Each `POST` gets its own MCP server and transport, answered and closed.
   `GET` and `DELETE` return 405 with `Allow: POST`: there are no sessions to stream to or tear down.
-- **A Nest controller.** The endpoint is a regular controller mounted by the module, one class per
-  instance, so your global prefix applies and the `guards` you configure get a real `ExecutionContext`.
+- **Its own listener.** A plain `node:http` server, one per app, opened by the first instance at
+  `onApplicationBootstrap` and closed when the app closes. It routes each request by path to its
+  instance, runs that instance's `authorize`, and hands the raw request to the MCP transport. No
+  controller is registered, so nothing of the app (prefix, versioning, middlewares, enhancers,
+  OpenAPI generation) touches it, and it works in an app that never calls `listen`.
 - **Traces by wrapping enhancer instances.** With the `requests` group on, the module wraps, in place,
   `canActivate`, `intercept`, `transform` and `catch` on the guard, interceptor, pipe and filter
   instances Nest built (global, per controller and per route) before Nest builds the routes. Each
@@ -342,18 +367,25 @@ and `app_info.tools.schedule` is `false`.
 - **Scheduled jobs by reading the registry.** With the `schedule` group on, the module finds the
   app's `SchedulerRegistry` and reads it per call. Nothing is wrapped, started or stopped.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
-  calling your app.
+  calling the inspector's listener.
 
 ## Security
 
-The endpoint shows the inside of your app. By default it is off in production and only accepts
-loopback. If you turn it on elsewhere, put a guard in front of it:
+The inspector shows the inside of your app. By default it is off in production and its listener
+binds to loopback (`127.0.0.1`), so only the machine itself reaches it. If you open it beyond
+loopback, check every request with `authorize`:
 
 ```ts
-NestMcpModule.forRoot({ enabled: true, localOnly: false, guards: [MyAuthGuard] });
+NestMcpModule.forRoot({
+  enabled: true,
+  listen: { host: '0.0.0.0' },
+  authorize: (req) => req.headers.authorization === `Bearer ${process.env.INSPECTOR_TOKEN}`,
+});
 ```
 
-Opening it to the network without guards works, and logs a warning at every startup.
+Listening beyond loopback without `authorize` works, and logs a warning at every startup. Your app's
+own guards do not run on the inspector: to put your existing authentication in front of it, call it
+from `authorize` or put a reverse proxy before the listener.
 
 ## Limitations
 

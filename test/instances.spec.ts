@@ -1,6 +1,5 @@
 import { CATS_INSPECTOR_PATH } from './fixtures/app/cats/cats.module.js';
-import { DenyAllGuard } from './fixtures/app/deny-all.guard.js';
-import { RecordingLogger, RunningApp, startApp, toolJson } from './support/start-app.js';
+import { RecordingLogger, RunningApp, freePort, startApp, toolJson } from './support/start-app.js';
 
 const MCP_POST = {
   method: 'POST',
@@ -29,16 +28,17 @@ describe('inspector instances', () => {
     >;
   }
 
-  it('keeps path and guards apart for two apps booted in one process', async () => {
+  it('keeps listener, path and authorize apart for two apps booted in one process', async () => {
     const guarded = await start({
-      root: { kind: 'sync', options: { path: 'guarded', guards: [DenyAllGuard] } },
+      root: { kind: 'sync', options: { path: 'guarded', authorize: () => false } },
     });
     const open = await start({ root: { kind: 'sync', options: { path: 'open' } } });
 
-    expect((await guarded.fetch('guarded', MCP_POST)).status).toBe(403);
-    expect((await guarded.fetch('open', MCP_POST)).status).toBe(404);
-    expect((await open.fetch('open', MCP_POST)).status).toBe(200);
-    expect((await open.fetch('guarded', MCP_POST)).status).toBe(404);
+    expect(guarded.inspectorUrl).not.toBe(open.inspectorUrl);
+    expect((await guarded.inspect('guarded', MCP_POST)).status).toBe(403);
+    expect((await guarded.inspect('open', MCP_POST)).status).toBe(404);
+    expect((await open.inspect('open', MCP_POST)).status).toBe(200);
+    expect((await open.inspect('guarded', MCP_POST)).status).toBe(404);
     expect((await appInfo(open, 'open')).mcpPath).toBe('/open');
   });
 
@@ -46,7 +46,7 @@ describe('inspector instances', () => {
     it('reports the resolved tool switches and header policy, with their defaults', async () => {
       const app = await start();
 
-      expect((await appInfo(app, '_mcp')).options).toEqual({
+      expect((await appInfo(app, '/')).options).toEqual({
         tools: {
           graph: true,
           routes: true,
@@ -70,7 +70,7 @@ describe('inspector instances', () => {
         catsInspector: true,
       });
 
-      expect((await appInfo(app, '_mcp')).options).toMatchObject({
+      expect((await appInfo(app, '/')).options).toMatchObject({
         tools: { logs: false, graph: true },
         requests: { headers: 'none' },
       });
@@ -82,7 +82,7 @@ describe('inspector instances', () => {
   });
 
   describe('bootstrap log, once per instance', () => {
-    it('announces every instance with its full endpoint path and warns nothing by default', async () => {
+    it('announces every instance with its URL on the listener and warns nothing by default', async () => {
       const logger = new RecordingLogger();
       const app = await start({ logger, globalPrefix: 'api', catsInspector: true });
 
@@ -90,19 +90,21 @@ describe('inspector instances', () => {
       expect(entries.filter((entry) => entry.level !== 'log')).toEqual([]);
       expect(entries.map((entry) => entry.message).sort()).toEqual(
         [
-          `Inspector endpoint at ${app.baseUrl}/api/_mcp`,
-          `Inspector endpoint at ${app.baseUrl}/api/${CATS_INSPECTOR_PATH}`,
+          `Inspector listening at ${app.inspectorUrl}/`,
+          `Inspector listening at ${app.inspectorUrl}/${CATS_INSPECTOR_PATH}`,
         ].sort(),
       );
     });
 
     it('warns once per condition and instance when both conditions hold', async () => {
       const logger = new RecordingLogger();
+      const port = await freePort();
       await start({
         logger,
         snapshot: false,
-        root: { kind: 'sync', options: { localOnly: false } },
-        catsInspector: true,
+        inspectorPort: port,
+        root: { kind: 'sync', options: { listen: { host: '0.0.0.0', port } } },
+        catsInspector: { authorize: () => true },
       });
 
       const warnings = logger
@@ -113,8 +115,8 @@ describe('inspector instances', () => {
         warnings.filter((message) => message.startsWith(`${path}:`) && message.includes(text));
 
       expect(warnings).toHaveLength(3);
-      expect(about('/_mcp', 'snapshot: true')).toHaveLength(1);
-      expect(about('/_mcp', 'open to the network')).toHaveLength(1);
+      expect(about('/', 'snapshot: true')).toHaveLength(1);
+      expect(about('/', 'beyond loopback')).toHaveLength(1);
       expect(about(`/${CATS_INSPECTOR_PATH}`, 'snapshot: true')).toHaveLength(1);
     });
   });

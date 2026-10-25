@@ -3,58 +3,59 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
-import type { AddressInfo } from 'node:net';
+import { ModulesContainer } from '@nestjs/core';
 import { LOGGER_CONTEXT, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
 import { installLogTee } from './logs/install-log-tee.js';
 import type { ResolvedNestMcpOptions } from './nest-mcp.options.js';
+import { ToolRegistry } from './tools/registry.js';
 import type { ToolContext } from './tools/tool-context.js';
-
-interface HttpServerLike {
-  listening?: boolean;
-  address(): AddressInfo | string | null;
-  once(event: 'listening', listener: () => void): unknown;
-}
-
-function origin(address: AddressInfo | string | null): string | undefined {
-  if (!address || typeof address === 'string') return undefined;
-  const wildcard = address.address === '::' || address.address === '0.0.0.0';
-  const host = wildcard
-    ? 'localhost'
-    : address.family === 'IPv6' || address.address.includes(':')
-      ? `[${address.address}]`
-      : address.address;
-  return `http://${host}:${address.port}`;
-}
+import { isLoopback, listenerFor, type InspectorListener } from './transport/listener.js';
+import { createMcpHandler } from './transport/mcp-endpoint.js';
 
 /**
- * What each instance does while the app initialises: joins (or installs) the process-wide Logger
- * tee at `onModuleInit`, then the bootstrap warnings, once per instance, through Nest's `Logger`
- * (context `NestMcp`) at `onApplicationBootstrap`.
+ * What each instance does over the app's lifecycle: at `onModuleInit`, joins (or installs) the
+ * process-wide Logger tee and joins the app's inspector listener with its path; at
+ * `onApplicationBootstrap`, opens the listener (the first instance does) and writes the bootstrap
+ * log and warnings, once per instance, through Nest's `Logger` (context `NestMcp`); at
+ * `onModuleDestroy`, leaves the listener, which the last instance closes.
  */
 @Injectable()
-export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap {
+export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(LOGGER_CONTEXT);
+  private listener: InspectorListener | undefined;
 
   constructor(
     @Inject(NEST_MCP_OPTIONS) private readonly options: ResolvedNestMcpOptions,
     @Inject(NEST_MCP_TOOL_CONTEXT) private readonly context: ToolContext,
-    @Inject(HttpAdapterHost) private readonly adapterHost: HttpAdapterHost,
+    @Inject(ToolRegistry) private readonly registry: ToolRegistry,
+    // One per app: the key of the listener every instance of the app shares.
+    @Inject(ModulesContainer) private readonly modulesContainer: object,
   ) {}
 
   /**
    * `useLogger` runs before `init`/`listen` in a normal bootstrap, so the active logger is final
    * here; and every `onApplicationBootstrap` of the app, where apps log the most, comes after.
+   * Every instance joins here, so the listener knows all of them before the first one opens it.
    */
   onModuleInit(): void {
-    if (!this.options.enabled || !this.options.tools.logs) return;
-    this.context.logTee = installLogTee(this.options.logs.bufferSize);
+    if (!this.options.enabled) return;
+    if (this.options.tools.logs) this.context.logTee = installLogTee(this.options.logs.bufferSize);
+    const onError = (message: string) => this.logger.error(message);
+    this.listener = listenerFor(this.modulesContainer);
+    this.listener.join({
+      path: this.options.path,
+      authorize: this.options.authorize,
+      listen: this.options.listen,
+      handle: createMcpHandler(this.registry, this.options.serverInfo, onError),
+      onError,
+    });
   }
 
-  onApplicationBootstrap(): void {
-    if (!this.options.enabled) return;
+  async onApplicationBootstrap(): Promise<void> {
+    if (!this.options.enabled || !this.listener) return;
     const path = this.context.mcpPath();
 
     if (!this.context.snapshotEnabled()) {
@@ -63,24 +64,19 @@ export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap {
           'snapshot_disabled. Set it in NestFactory.create(AppModule, { snapshot: true }).',
       );
     }
-    if (!this.options.localOnly && this.options.guards.length === 0) {
+    const { host } = this.listener.address();
+    if (!isLoopback(host) && !this.options.authorize) {
       this.logger.warn(
-        `${path}: the inspector endpoint is open to the network (localOnly: false) with no guards. ` +
-          'Anyone who reaches the app can inspect it; add `guards`.',
+        `${path}: the inspector listens on ${host}, beyond loopback, with no \`authorize\`. ` +
+          'Anyone who reaches that address can inspect the app; add `authorize`.',
       );
     }
-    this.announce(path);
+    this.context.mcpUrl = `${await this.listener.open()}${path}`;
+    this.logger.log(`Inspector listening at ${this.context.mcpUrl}`);
   }
 
-  private announce(path: string): void {
-    const server = this.adapterHost?.httpAdapter?.getHttpServer?.() as HttpServerLike | undefined;
-    if (!server || typeof server.address !== 'function') {
-      this.logger.log(`Inspector endpoint at ${path}`);
-      return;
-    }
-    const log = () =>
-      this.logger.log(`Inspector endpoint at ${origin(server.address()) ?? ''}${path}`);
-    if (server.listening) log();
-    else server.once('listening', log);
+  async onModuleDestroy(): Promise<void> {
+    await this.listener?.leave(this.options.path);
+    this.listener = undefined;
   }
 }

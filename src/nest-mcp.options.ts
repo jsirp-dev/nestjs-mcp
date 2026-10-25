@@ -1,9 +1,10 @@
-import type { CanActivate, Type } from '@nestjs/common';
+import type { IncomingMessage } from 'node:http';
 import type { ConfigurableModuleAsyncOptions } from '@nestjs/common';
 import {
   DEFAULT_ID_HEADER,
+  DEFAULT_LISTEN_HOST,
+  DEFAULT_LISTEN_PORT,
   DEFAULT_LOGS_BUFFER_SIZE,
-  DEFAULT_PATH,
   DEFAULT_REQUESTS_BUFFER_SIZE,
 } from './constants.js';
 import { hostPackageInfo } from './support/package-info.js';
@@ -28,15 +29,29 @@ export const SWITCHABLE_TOOL_GROUPS: readonly SwitchableToolGroup[] = [
 /** Which request headers a trace keeps. Bodies are never kept. */
 export type RequestHeadersMode = 'none' | 'names' | 'full';
 
+/** Where the inspector's own listener binds. */
+export interface NestMcpListenOptions {
+  /** Default `'127.0.0.1'`: loopback only. */
+  host?: string;
+  /** Default `7777`; `0` picks a free port (the bootstrap log and `app_info` say which). */
+  port?: number;
+}
+
+/** Access control over the raw request on the listener; `false` (or a throw) answers 403. */
+export type NestMcpAuthorize = (req: IncomingMessage) => boolean | Promise<boolean>;
+
 export interface NestMcpOptions {
   /** The switch. Off, the instance registers nothing. Default: `NODE_ENV !== 'production'`. */
   enabled?: boolean;
-  /** Endpoint route, relative to the global prefix. Default `_mcp`; required for `forFeature`. */
+  /** Route on the listener. Default `/` for `forRoot`; required for `forFeature`. */
   path?: string;
-  /** Nest guards on the endpoint, like `@UseGuards`, after `LocalOnlyGuard`. */
-  guards?: Type<CanActivate>[];
-  /** Reject anything not from loopback. Default `true`. */
-  localOnly?: boolean;
+  /**
+   * The inspector's own HTTP listener, shared by every instance of the app. Default
+   * `{ host: '127.0.0.1', port: 7777 }`. Set it on one instance, or the same on all.
+   */
+  listen?: NestMcpListenOptions;
+  /** Checked on every request to this instance's endpoint before it is answered. */
+  authorize?: NestMcpAuthorize;
   /** One switch per tool group. All `true` by default. */
   tools?: Partial<Record<SwitchableToolGroup, boolean>>;
   logs?: { bufferSize?: number };
@@ -49,16 +64,13 @@ export interface NestMcpOptions {
 export type NestMcpFeatureOptions = NestMcpOptions & { path: string };
 
 /**
- * The options that decide the endpoint's route and guards. Nest reads the route before any async
- * factory runs, so in the `*Async` variants these are given statically, next to `useFactory`.
+ * The options known when the module is defined: `path` (checked there, so a `forFeature` without
+ * it fails at once) and, optionally, `enabled`, which then decides whether anything is registered.
  */
-export type NestMcpStaticOptions = Pick<
-  NestMcpOptions,
-  'enabled' | 'path' | 'guards' | 'localOnly'
->;
+export type NestMcpStaticOptions = Pick<NestMcpOptions, 'enabled' | 'path'>;
 
-/** What an async factory may return: everything but the static options (`enabled` included). */
-export type NestMcpFactoryOptions = Omit<NestMcpOptions, 'path' | 'guards' | 'localOnly'>;
+/** What an async factory may return: everything but `path` (`enabled` included). */
+export type NestMcpFactoryOptions = Omit<NestMcpOptions, 'path'>;
 
 export type NestMcpAsyncOptions = ConfigurableModuleAsyncOptions<NestMcpFactoryOptions> &
   NestMcpStaticOptions;
@@ -67,10 +79,11 @@ export type NestMcpFeatureAsyncOptions = NestMcpAsyncOptions & { path: string };
 
 export interface ResolvedNestMcpOptions {
   enabled: boolean;
-  /** Normalised: no leading or trailing slashes. */
+  /** Normalised: no leading or trailing slashes; `''` is the listener's root. */
   path: string;
-  guards: Type<CanActivate>[];
-  localOnly: boolean;
+  /** As given; `undefined` takes another instance's or the default. */
+  listen: Required<NestMcpListenOptions> | undefined;
+  authorize: NestMcpAuthorize | undefined;
   scope: InstanceScopeKind;
   tools: Record<SwitchableToolGroup, boolean>;
   logs: { bufferSize: number };
@@ -89,26 +102,40 @@ export function trimSlashes(path: string): string {
 }
 
 /**
- * The endpoint path with no leading or trailing slashes. `forFeature` has no default: the
- * importing module is not known when its decorator argument is evaluated.
+ * The endpoint path with no leading or trailing slashes; `''` is the listener's root, the default
+ * of `forRoot`. `forFeature` has no default: the importing module is not known when its decorator
+ * argument is evaluated.
  */
 export function resolvePath(path: string | undefined, scope: InstanceScopeKind): string {
   if (path === undefined) {
     if (scope === 'module') {
       throw new Error(
-        "NestMcpModule.forFeature requires the `path` option, for example `{ path: '_mcp/cats' }`.",
+        "NestMcpModule.forFeature requires the `path` option, for example `{ path: 'cats' }`.",
       );
     }
-    return DEFAULT_PATH;
+    return '';
   }
   if (typeof path !== 'string') {
     throw new Error('NestMcpModule: the `path` option must be a string.');
   }
-  const normalised = trimSlashes(path);
-  if (normalised === '') {
-    throw new Error("NestMcpModule: the `path` option must not be empty or '/'.");
+  return trimSlashes(path);
+}
+
+function resolveListen(
+  listen: NestMcpListenOptions | undefined,
+): Required<NestMcpListenOptions> | undefined {
+  if (listen === undefined) return undefined;
+  const host = listen.host ?? DEFAULT_LISTEN_HOST;
+  const port = listen.port ?? DEFAULT_LISTEN_PORT;
+  if (typeof host !== 'string' || host === '') {
+    throw new Error('NestMcpModule: `listen.host` must be a non-empty string.');
   }
-  return normalised;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(
+      `NestMcpModule: \`listen.port\` must be an integer from 0 to 65535, got ${port}.`,
+    );
+  }
+  return { host, port };
 }
 
 function positiveInteger(value: number | undefined, fallback: number, option: string): number {
@@ -126,6 +153,9 @@ export function resolveOptions(
   options: NestMcpOptions = {},
   scope: InstanceScopeKind,
 ): ResolvedNestMcpOptions {
+  if (options.authorize !== undefined && typeof options.authorize !== 'function') {
+    throw new Error('NestMcpModule: `authorize` must be a function `(req) => boolean`.');
+  }
   const headers = options.requests?.headers ?? 'names';
   if (!HEADER_MODES.includes(headers)) {
     throw new Error(
@@ -140,8 +170,8 @@ export function resolveOptions(
   return {
     enabled: options.enabled ?? defaultEnabled(),
     path: resolvePath(options.path, scope),
-    guards: [...(options.guards ?? [])],
-    localOnly: options.localOnly ?? true,
+    listen: resolveListen(options.listen),
+    authorize: options.authorize,
     scope,
     tools,
     logs: {

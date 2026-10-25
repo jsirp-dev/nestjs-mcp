@@ -11,6 +11,77 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ---
 
+## Unreleased
+
+### Own listener instead of a Nest controller (ticket #23, 2026-10-25)
+
+Implements decision 1 of [ADR-0004](docs/adr/0004-own-listener-and-log-sink.md).
+
+#### Done
+
+- The inspector answers on its own `node:http` server (`src/transport/listener.ts`), `127.0.0.1:7777`
+  by default, opened by the first instance at `onApplicationBootstrap` and closed at `onModuleDestroy`
+  of the last one (`closeAllConnections`, so `app.close()` frees the port at once). `forRoot` answers
+  at `/`, each `forFeature` at its `path`. Every instance joins the listener at `onModuleInit`, so it
+  knows all of them before it opens.
+- New options `listen: { host?, port? }` (`port: 0` picks a free one) and `authorize(req)` over the raw
+  `IncomingMessage`, per instance; `false` or a throw (logged) answers 403. Unknown path → 404, `GET`
+  and anything but `POST` → 405 with `Allow: POST`, all JSON-RPC errors.
+- Startup: `Inspector listening at <url>` per instance; a port in use fails with an error naming
+  `listen.port`; one `warn` per instance listening beyond loopback without `authorize`; two instances
+  on one path, or with different `listen`, fail at startup.
+- `app_info` gains `mcpUrl`; `mcpPath` is now the path on the listener (`/`, `/cats`), with no global
+  prefix.
+- The trace recorder no longer excludes the inspector's route: its calls never reach Nest.
+- Test harness: each app gets a free inspector port (`freePort()`), `connect(path)` and `inspect(path)`
+  talk to the listener, `fetch` to the app.
+
+#### Breaking
+
+- `guards` and `localOnly` are gone, with `LocalOnlyGuard`, `EnabledGuard` and the controller. No
+  route of the inspector exists in the app any more: the old `/_mcp` (or `/<prefix>/_mcp`) answers the
+  app's own 404, and `routes_list` no longer lists it.
+- `path` defaults to `/` (was `_mcp`) and is relative to the listener, not to the global prefix; `'/'`
+  is now accepted.
+- In the `*Async` variants only `path` (and, optionally, `enabled`) is static; `listen` and `authorize`
+  may come from the factory. A factory that returns `enabled: false` opens no listener, instead of
+  answering 404 on a mounted route.
+
+#### Deviations from ADR-0004
+
+- **One listener per app, not per process.** Instances are grouped by the app's `ModulesContainer`.
+  With one Nest app per process (the normal case) this is the ADR's "one per process"; two apps in one
+  process each get their own listener and need different ports (the second fails naming
+  `listen.port`). Grouping per process would have made two apps share routes, and the first app's
+  `close()` would have closed the second's endpoint.
+
+#### Hot decisions
+
+- `listen` is shared: an instance that does not set it takes the one another instance set, or the
+  default; two different explicit ones are an error rather than a silent first-wins, because module
+  order decides which instance bootstraps first (`forFeature` instances usually do).
+- `authorize` is per instance, like the old `guards`, so a module instance can be guarded differently.
+- The path is taken from the raw request target with the query string dropped, not through `new URL`,
+  so `//x` is never read as a host.
+- A wildcard bind is logged as `http://localhost:<port>`, as the old controller URL was.
+
+#### Effect on other tickets (not closed here)
+
+- **#13** (swagger 7 on Nest 10 crashes in `createDocument`): resolved by removing the controller.
+  A throwaway Nest 10.4.22 + `@nestjs/swagger` 7.4.2 app calling `SwaggerModule.createDocument` before
+  `listen`: the previous build fails with `TypeError: Cannot read properties of undefined (reading
+  '0')`; this one generates the document, whose paths are only the app's (`/cats`).
+- **#22**, point 2 (the host's global enhancers run on the endpoint): resolved; a counting global
+  guard stays at zero while the inspector is queried. Point 1 (`PinoLogger`) belongs to #24.
+
+#### Verification
+
+`yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (14 suites, 164
+tests) green on Nest 11.2.8 / Node 20; an SDK round-trip on Nest 10.4.22 against the packed build
+lists the tools and frees the port on `close()`.
+
+---
+
 <!-- PHASE ENTRIES START HERE -->
 
 ## Phase 6b — CI matrix and release workflow (2026-10-25)

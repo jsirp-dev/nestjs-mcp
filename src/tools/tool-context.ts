@@ -8,7 +8,7 @@ import type { ScheduleInspector } from '../schedule/install-schedule.js';
 import type { LogTee } from '../logs/log-tee.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
-import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js';
+import type { ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 
 /** What the inspector reads from Nest's `ApplicationConfig`. Duck-typed on purpose. */
 export interface ApplicationConfigLike {
@@ -50,8 +50,13 @@ export interface ToolContext {
    * otherwise, and then the group is not registered.
    */
   schedule: ScheduleInspector | undefined;
-  /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
+  /** The endpoint's path on the inspector listener, with a leading slash (`/` for the root). */
   mcpPath(): string;
+  /**
+   * The endpoint's absolute URL on the inspector listener, set at `onApplicationBootstrap` of the
+   * instance once the listener is open; `undefined` before that.
+   */
+  mcpUrl: string | undefined;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
   snapshotEnabled(): boolean;
   /**
@@ -81,9 +86,9 @@ export function createToolContext(
     events: undefined,
     schedule: undefined,
     mcpPath() {
-      const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
-      return `/${[prefix, options.path].filter(Boolean).join('/')}`;
+      return `/${options.path}`;
     },
+    mcpUrl: undefined,
     snapshotEnabled() {
       const nodes = serializedGraph?.toJSON().nodes;
       return nodes !== undefined && Object.keys(nodes).length > 0;

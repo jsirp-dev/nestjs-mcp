@@ -9,8 +9,8 @@ and what the app is doing. It observes; it never exposes the app's business logi
 _Avoid_: devtools server, debugger, MCP for the app
 
 **Instance**:
-One mounted inspector, created by one `forRoot` or `forFeature` call: its own endpoint, scope, guards
-and switches. An app may run several.
+One mounted inspector, created by one `forRoot` or `forFeature` call: its own endpoint, scope,
+`authorize` and switches. An app may run several, all on the same listener.
 _Avoid_: server (ambiguous with the MCP server the SDK creates per request)
 
 **Scope**:
@@ -20,7 +20,8 @@ _Avoid_: context (Nest and MCP both use it for other things), area, slice
 
 **Listener**:
 The HTTP server the inspector opens inside the app's process (`127.0.0.1:7777` by default), shared by
-every instance of that process and independent of the app's own HTTP server: no host prefix,
+every instance of that app (one per process when the process runs one Nest app) and independent of
+the app's own HTTP server: no host prefix,
 versioning, middleware or enhancer runs on it.
 _Avoid_: devtools port, admin port, the app's server
 

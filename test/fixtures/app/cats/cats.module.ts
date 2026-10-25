@@ -8,7 +8,7 @@ import { LoggingService } from './logging.service.js';
 import { OwnerGuard } from './owner.guard.js';
 import { RequestScopedInterceptor } from './request-scoped.interceptor.js';
 
-export const CATS_INSPECTOR_PATH = '_mcp/cats';
+export const CATS_INSPECTOR_PATH = 'cats';
 
 @Module({
   imports: [OwnersModule],

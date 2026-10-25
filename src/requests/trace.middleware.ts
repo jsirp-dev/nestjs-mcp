@@ -30,9 +30,7 @@ export interface TracingApplicationConfigLike {
 export function createTraceMiddleware(recorder: TraceRecorder) {
   class NestMcpTraceMiddleware {
     use(request: IncomingRequestLike, response: OutgoingResponseLike, next: () => void): void {
-      const active = recorder.start(request, response);
-      if (!active) return next();
-      runWithTrace(active, next);
+      runWithTrace(recorder.start(request, response), next);
     }
   }
   // Pinned: a bundler may rename a nested class.
@@ -57,24 +55,18 @@ export interface InstallTracingInput {
   modulesContainer: ModulesContainerLike;
   applicationConfig: TracingApplicationConfigLike;
   consumer: MiddlewareConsumerLike;
-  /** The calling instance's endpoint, global prefix included: never traced. */
-  mcpPath: string;
 }
 
 /**
  * Installs request tracing in an app, once: the first instance with the `requests` group on
  * wraps the enhancers, adds the handler interceptor to the globals and applies the middleware to
- * every route; every later instance of the same app joins its recorder and excludes its endpoint.
+ * every route; every later instance of the same app joins its recorder.
  * Runs from `configure`, before Nest builds the routes, which bind exception filters for good.
  */
 export function installRequestTracing(input: InstallTracingInput): TraceRecorder {
   const known = recorders.get(input.applicationConfig);
-  if (known) {
-    known.exclude(input.mcpPath);
-    return known;
-  }
+  if (known) return known;
   const recorder = new TraceRecorder(input.options);
-  recorder.exclude(input.mcpPath);
   const report = wrapEnhancers(
     input.modulesContainer,
     input.applicationConfig,

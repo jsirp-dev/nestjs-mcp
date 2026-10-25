@@ -10,7 +10,7 @@ import { Writable } from 'node:stream';
 import { CATS_INSPECTOR_PATH } from './fixtures/app/cats/cats.module.js';
 import { FIXTURE_STACK } from './fixtures/app/cats/logging.service.js';
 import { MemoryLogger, type LoggerCall } from './support/memory-logger.js';
-import { RunningApp, StartAppOptions, startApp, toolJson } from './support/start-app.js';
+import { RunningApp, StartAppOptions, freePort, startApp, toolJson } from './support/start-app.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -44,7 +44,7 @@ describe('logs', () => {
     running = await startApp({ logging: true, logger, ...options });
     // The endpoint line is written once the server is listening; let it through.
     await new Promise((resolve) => setImmediate(resolve));
-    return { logger, client: await running.connect('_mcp') };
+    return { logger, client: await running.connect('/') };
   }
 
   it('forwards to the app logger exactly what it received without the tee', async () => {
@@ -99,7 +99,7 @@ describe('logs', () => {
     expect(byText.json.entries.map((entry: Json) => entry.level)).toEqual(['error']);
     const own = await call(client, 'logs_tail', { context: 'NestMcp' });
     expect(own.json.entries.map((entry: Json) => entry.message)).toEqual([
-      expect.stringMatching(/^Inspector endpoint at http:\/\/127\.0\.0\.1:\d+\/_mcp$/),
+      expect.stringMatching(/^Inspector listening at http:\/\/127\.0\.0\.1:\d+\/$/),
     ]);
   });
 
@@ -238,10 +238,11 @@ describe('logs with nestjs-pino', () => {
       },
     });
 
+    const inspectorPort = await freePort();
     @Module({
       imports: [
         LoggerModule.forRoot({ pinoHttp: [{ level: 'info' }, stream] }),
-        NestMcpModule.forRoot(),
+        NestMcpModule.forRoot({ listen: { port: inspectorPort } }),
       ],
       controllers: [PingController],
     })
@@ -258,7 +259,7 @@ describe('logs with nestjs-pino', () => {
     const client = new Client({ name: 'nestjs-mcp-test', version: '0.0.0' });
     try {
       await client.connect(
-        new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/_mcp`)),
+        new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${inspectorPort}/`)),
       );
       expect(await (await fetch(`http://127.0.0.1:${port}/ping`)).text()).toBe('pong');
       const deadline = Date.now() + 2000;

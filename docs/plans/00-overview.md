@@ -59,7 +59,7 @@ import { NestMcpModule } from '@jsirp/nestjs-mcp';
 export class AppModule {}
 
 // One module: what that module and its imports see, on its own endpoint.
-@Module({ imports: [NestMcpModule.forFeature({ path: '_mcp/cats' })] })
+@Module({ imports: [NestMcpModule.forFeature({ path: 'cats' })] })
 export class CatsModule {}
 
 // Any source of configuration, through Nest's configurable-module pattern.
@@ -71,17 +71,17 @@ NestMcpModule.forRootAsync({
 ```
 
 `forRoot` is optional; any number of `forFeature` instances may coexist, each with its own path and
-switches. All instances of a process share one listener (`listen.host:listen.port`): `forRoot` answers
-at `/`, each `forFeature` at its `path`.
+switches. All instances of an app share one listener (`listen.host:listen.port`; one per process when
+the process runs one Nest app): `forRoot` answers at `/`, each `forFeature` at its `path`.
 
 `NestMcpOptions` (all optional unless noted; defaults make it work with no configuration):
 
 | Option | Type | Default | What it does |
 |--------|------|---------|--------------|
 | `enabled` | `boolean` | `process.env.NODE_ENV !== 'production'` | **The** switch. Off, the module registers nothing: no listener, no log tee, no tracing. A default, not a rule: set `true` where you want it and protect it with `authorize` |
-| `listen` | `{ host?: string; port?: number }` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the process. A busy port fails at startup naming this option |
+| `listen` | `{ host?: string; port?: number }` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the app: set on one instance or the same on all. `port: 0` picks a free one. A busy port fails at startup naming this option |
 | `path` | `string` | `'/'` for `forRoot`; **required** for `forFeature` | Route of the instance on the listener; no host prefix or versioning applies |
-| `authorize` | `(req) => boolean \| Promise<boolean>` | none | Access control over the raw request when the listener is opened beyond loopback; `false` → 403. Listening outside loopback without it logs a `warn` |
+| `authorize` | `(req) => boolean \| Promise<boolean>` | none | Access control over the raw request, per instance; `false` (or a throw) → 403. Listening outside loopback without it logs a `warn` |
 | `tools` | `{ graph?, routes?, logs?, requests?, events?, schedule? }` booleans | all `true` | One switch per tool group. Off removes its tools and, for `logs` and `requests`, installs nothing intrusive |
 | `logs` | `{ bufferSize?: number; sink?: LogSink; capture?: 'nest' \| 'sink' \| 'both'; normalize?: (record) => entry }` | `{ bufferSize: 2000, capture: 'both' }` | Ring buffer for the Logger tee and, with `sink` (from `createLogSink()`, attached by the host to its own logger), the host's logger output too. Transparent: nothing masked or altered |
 | `requests` | `{ bufferSize?: number; idHeader?: string; headers?: 'none' \| 'names' \| 'full' }` | `{ bufferSize: 500, idHeader: 'x-nest-mcp-request-id', headers: 'names' }` | Per-request traces. The id header is read, never echoed back. Full URL is stored; request headers per `headers`; bodies never |
@@ -133,7 +133,7 @@ packages/nestjs-mcp/
 │   ├── nest-mcp.module.ts    ConfigurableModuleBuilder: forRoot/forRootAsync/forFeature/forFeatureAsync
 │   ├── nest-mcp.options.ts   Types, defaults, validation
 │   ├── instance/             One inspector instance: its path on the listener, scope, tool context
-│   ├── transport/            The process-wide listener, Streamable HTTP handling, authorize, McpServer factory
+│   ├── transport/            The app's own listener, Streamable HTTP handling, authorize, McpServer factory
 │   ├── tools/                One file per group: app, graph, routes, logs, requests, events, schedule
 │   ├── graph/                SerializedGraph reader and the package's own model (nodes, edges, enhancers, scope)
 │   ├── logs/                 Logger tee, log sink and normalisers, ring buffer (installed once per process)
@@ -152,7 +152,7 @@ repository, never here.
 ## Architecture
 
 ```
-Claude Code ──HTTP (Streamable HTTP, stateless)──▶ POST http://127.0.0.1:7777/<path>   (the process-wide listener)
+Claude Code ──HTTP (Streamable HTTP, stateless)──▶ POST http://127.0.0.1:7777/<path>   (the inspector's own listener)
                                                       │  loopback bind + optional authorize(req)
                                                       ▼
                                                  McpServer (SDK) ── tools, filtered by the instance's scope
@@ -165,8 +165,8 @@ Claude Code ──HTTP (Streamable HTTP, stateless)──▶ POST http://127.0.0
 ```
 
 Stateless MCP: each `POST` creates a transport and a server, answers and closes. `GET` and `DELETE`
-return 405. Process-wide installers (the listener, log tee, enhancer wrapping, middleware) are installed
-once, by the first instance that needs them; every instance reads the shared buffers through its scope.
+return 405. Shared installers (the listener, enhancer wrapping and middleware once per app; the log tee
+once per process) are installed by the first instance that needs them; every instance reads the shared buffers through its scope.
 Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in front of the inspector.
 
 ## Closed decisions

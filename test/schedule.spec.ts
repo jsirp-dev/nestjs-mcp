@@ -18,7 +18,7 @@ describe('schedule tools', () => {
     running = undefined;
   });
 
-  async function boot(options: StartAppOptions = {}, path = '_mcp'): Promise<Client> {
+  async function boot(options: StartAppOptions = {}, path = '/'): Promise<Client> {
     running = await startApp({ schedule: true, ...options });
     return running.connect(path);
   }

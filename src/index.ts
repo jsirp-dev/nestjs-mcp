@@ -2,9 +2,11 @@ export { NestMcpModule } from './nest-mcp.module.js';
 export type {
   InstanceScopeKind,
   NestMcpAsyncOptions,
+  NestMcpAuthorize,
   NestMcpFactoryOptions,
   NestMcpFeatureAsyncOptions,
   NestMcpFeatureOptions,
+  NestMcpListenOptions,
   NestMcpOptions,
   NestMcpStaticOptions,
   RequestHeadersMode,

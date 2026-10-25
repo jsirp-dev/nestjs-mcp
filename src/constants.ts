@@ -17,14 +17,15 @@ export const NEST_MCP_INSTANCE = 'NEST_MCP_INSTANCE';
  * Nest's metadata keys, declared here because deep imports into `@nestjs/common/constants` do not
  * resolve under `NodeNext`. Their values have been stable since Nest 7.
  */
-export const PATH_METADATA = 'path';
 export const GUARDS_METADATA = '__guards__';
 export const ROUTE_ARGS_METADATA = '__routeArguments__';
 export const INTERCEPTORS_METADATA = '__interceptors__';
 export const PIPES_METADATA = '__pipes__';
 export const EXCEPTION_FILTERS_METADATA = '__exceptionFilters__';
 
-export const DEFAULT_PATH = '_mcp';
+/** Where the inspector's own listener binds by default: loopback only. */
+export const DEFAULT_LISTEN_HOST = '127.0.0.1';
+export const DEFAULT_LISTEN_PORT = 7777;
 export const DEFAULT_LOGS_BUFFER_SIZE = 2000;
 export const DEFAULT_REQUESTS_BUFFER_SIZE = 500;
 export const DEFAULT_ID_HEADER = 'x-nest-mcp-request-id';
