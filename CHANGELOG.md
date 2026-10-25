@@ -13,6 +13,97 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 5 — Request traces through guards, interceptors, pipes, filters and handler (2026-10-25)
+
+**Work commit:** `c267821` (ticket #7).
+
+### Done
+
+- Trace model (`src/requests/model.ts`), `AsyncLocalStorage` context and step recording
+  (`trace-context.ts`, 256 steps per trace, the rest counted in `droppedSteps`), `TraceRecorder`
+  (`trace-recorder.ts`): id from `requests.idHeader` or a UUID, method, URL with query, headers per
+  `requests.headers`, status and duration on `finish`/`close` (`aborted` when it closed first).
+- `wrapEnhancers` (`wrap-enhancers.ts`): wraps `canActivate`, `intercept`, `transform` and `catch`
+  in place, transparently (same `this`, same value, same exception; Promises chained, Observables
+  lifted through their own class), marked with `Symbol.for('nestjs-mcp.wrapped')`. Interceptors
+  record `enter` and `exit`, and `shortCircuited` when `next.handle()` was never called.
+- `NestMcpHandlerInterceptor`: names controller, handler and route and inserts the handler step
+  where it ran, after the pipes and before the interceptors' exits; no handler step when a pipe or
+  an interceptor stopped the request.
+- `requests_list` (`limit`, `method`, `path`, `status`, `minStatus`, `scope`) and `request_trace`
+  (`id`, `scope`), switched by `tools.requests`; `level` and `module` from the route (phase 3's
+  `RoutesReader`), `notTraced` for `REQUEST`/`TRANSIENT` enhancers on the route.
+- Fixture: opt-in `OwnerGuard` (`APP_GUARD` injecting `OwnersService`, returns `false`),
+  `RequestScopedInterceptor` and `HealthModule`. `test/requests.spec.ts` (21),
+  `test/wrap-enhancers.spec.ts` (7); "Request traces" section and limitations in the README.
+
+### Deviations from the plan
+
+- **Installed in `NestMcpModule.configure`, not `onApplicationBootstrap`** (closed decision 10).
+  Nest binds every exception filter's `catch` (`instance.catch.bind(instance)`) when it builds the
+  routes, which is before every lifecycle hook; `configure` runs in `init()` just before that, with
+  every instance created and `useGlobalX` already applied. The closest alternative.
+- **The handler interceptor is added with `ApplicationConfig.addGlobalInterceptor`, not provided as
+  `APP_INTERCEPTOR`**: once per app (two instances would add two), and no provider node of the
+  inspector in the app's graph. It lands after the app's globals; its insertion rule places the
+  handler step correctly at any position. `routes_*` leave it, and the trace middleware, out.
+- **`injectables` and globals, not `providers`**: a service that happens to have `transform` or
+  `catch` is not an enhancer and must not record steps; `APP_X` providers are reached through
+  `ApplicationConfig`. Enhancer instances written inline in controller decorators are wrapped too.
+- **One recorder per app** (keyed by its `ApplicationConfig`), not per process: two apps in one
+  process keep their own buffer and options. The `AsyncLocalStorage` is per process.
+- **`forRoutes('{*path}')` on Nest 11, `'*'` on Nest 10**: Nest 11 warns about `/api/*` under a global
+  prefix (`LegacyRouteConverter`); Nest 10's path-to-regexp knows only `*`.
+- The middleware is a class created per app: Nest names a functional middleware with a random token.
+- `request_trace` also takes `scope`, like the other tools. `nest-mcp.bootstrap.ts` and
+  `app.tools.ts` did not change (`app_info.tools.requests` turns `true` through the registry).
+
+### Hot decisions
+
+- **Open decision 1 closed: no alias for an existing correlation header.** One header is read,
+  `requests.idHeader`; an app that already propagates `x-request-id` sets it to that. An alias by
+  default would turn ids a proxy generates into trace ids, and two headers need a precedence rule.
+- A guard returning `false` is `denied`; a guard that throws is `threw` with the exception (401 from
+  `ApiKeyGuard` is `threw UnauthorizedException`).
+- Steps are in the order they were recorded; the handler step spans from the end of the step before
+  it to the first inner `exit`, so it is the handler's own time, not the interceptors'.
+- Traces enter the buffer when they start, so in-flight requests show (`inFlight: true`).
+  `requests_list` answers oldest first, like `logs_tail`. Several traces with one id: the latest.
+- A module-scoped instance sees a trace only if its route's module is in scope; a request that matched
+  no route is seen from app scope only. Without `snapshot` there is no `level`, `module` or scope
+  filter (scope falls back to app, as before).
+- The first instance of an app with the group on decides `requests.*`; later ones only exclude their
+  endpoint.
+
+### Stumbles and resolutions
+
+- Nest's `GuardsConsumer` checks `instanceof Observable` on a guard's result: lifting with `pipe(tap)`
+  keeps the source's own Observable class, so the check holds whatever `rxjs` copy the package loads.
+- A wrapped interceptor gets a `next` derived with `Object.create(next)`, whose `handle` records that
+  it was called; everything else on `next` is inherited.
+
+### Critical information for later phases
+
+- **Phase 6**: `wrapEnhancers` walks `ModulesContainer` (`injectables`, `controllers`); events and jobs
+  walk providers. The note to extract `forEachInstance` into `support/` still stands, and so does the
+  getter-by-name read of `ApplicationConfig` globals, now in `routes-reader.ts` and
+  `wrap-enhancers.ts`.
+- **Phase 6b**: the Nest 10 leg is the first run of `'*'` for the middleware, of
+  `addGlobalInterceptor` and of `InstanceWrapper.isTransient`/`isDependencyTreeStatic` there.
+- **Phase 7**: global enhancers added after `app.init()` are not traced; nor are requests outside the
+  global prefix. Frozen enhancer instances are left unwrapped.
+- Not covered by a test: aborted requests (`close` before `finish`), async `intercept`, and a
+  `TRANSIENT` enhancer on a real app (the walk's branch has a unit test).
+
+### Verification
+
+- `yarn test` at start: 10 suites, 105 tests green, before any change.
+- `yarn build && yarn test`: 12 suites, 133 tests green; `test/requests.spec.ts` (21) covers the
+  happy path, denial, pipe failure, filter, ten concurrent requests, the injected-guard transparency,
+  correlation without echo, the three `headers` modes with a body never stored, `forFeature` scope,
+  the endpoint excluded and `tools.requests: false` leaving no mark.
+- `yarn lint`, `yarn type-check`, `yarn format-check` and `sh .husky/pre-commit`: exit 0.
+
 ## Phase 4 — Live logs from the app's `Logger` (2026-10-25)
 
 **Work commit:** `a82aadc` (ticket #6).
