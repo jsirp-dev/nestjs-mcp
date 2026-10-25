@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
+import { stackOf } from '../debug/debug.js';
 import { handlerKey } from '../support/handler-key.js';
 import type { RequestTrace, TraceError, TraceStep } from './model.js';
 
@@ -81,10 +82,19 @@ export function record(active: ActiveTrace, step: TraceStep): TraceStep | undefi
   return step;
 }
 
-/** An exception as a trace keeps it: its name (the class for Nest's exceptions) and message. */
+/**
+ * An exception as a trace or a run keeps it: its name (the class for Nest's exceptions) and
+ * message and, with `debug` on, its stack.
+ */
 export function describeError(error: unknown): TraceError {
   if (error instanceof Error) {
-    return { name: error.name || error.constructor.name, message: error.message };
+    const described: TraceError = {
+      name: error.name || error.constructor.name,
+      message: error.message,
+    };
+    const stack = stackOf(error);
+    if (stack) described.stack = stack;
+    return described;
   }
   const object = error as { name?: unknown; message?: unknown } | null;
   return {

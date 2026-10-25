@@ -60,6 +60,12 @@ One recorded unit inside a trace: an enhancer, the handler, or an exception filt
 and duration.
 _Avoid_: event, hop, stage
 
+**Frame**:
+One call in the `stack` of a recorded error, with the `debug` option on: function, file, line and
+column, the original source's when a source map is found (`mapped`), `external` when it is not the
+app's code. Only the position, never the code there or its variables.
+_Avoid_: call site (V8's API object), stack line, trace (a trace is a request's)
+
 **Run**:
 One execution of a scheduled job (`@Cron`, `@Interval`, `@Timeout`) or of an `@OnEvent` listener,
 started by the scheduler or the emitter: kind, class, method, job name or event, timing, outcome

@@ -3,6 +3,7 @@ import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js'
 import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
+import type { DebugHandle } from '../debug/debug.js';
 import type { EventsInspector } from '../events/install-events.js';
 import type { RunsInspector } from '../runs/install-runs.js';
 import type { ScheduleInspector } from '../schedule/install-schedule.js';
@@ -58,6 +59,11 @@ export interface ToolContext {
    * with its module imported; `undefined` otherwise, and then the group is not registered.
    */
   runs: RunsInspector | undefined;
+  /**
+   * This instance's hold on the process-wide `debug`, taken in `configure` of the instance's
+   * module and released at its `onModuleDestroy`.
+   */
+  debug: DebugHandle | undefined;
   /** The endpoint's path on the inspector listener, with a leading slash (`/` for the root). */
   mcpPath(): string;
   /**
@@ -94,6 +100,7 @@ export function createToolContext(
     events: undefined,
     schedule: undefined,
     runs: undefined,
+    debug: undefined,
     mcpPath() {
       return `/${options.path}`;
     },

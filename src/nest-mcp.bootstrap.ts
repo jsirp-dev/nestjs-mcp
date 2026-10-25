@@ -79,6 +79,8 @@ export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, O
 
   async onModuleDestroy(): Promise<void> {
     this.context.logs?.uninstall();
+    this.context.debug?.release();
+    this.context.debug = undefined;
     await this.listener?.leave(this.options.path);
     this.listener = undefined;
   }

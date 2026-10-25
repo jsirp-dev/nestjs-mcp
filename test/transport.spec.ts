@@ -85,6 +85,7 @@ describe('inspector listener', () => {
         schedule: false,
         runs: false,
       },
+      debug: { enabled: false, stackFrames: 30, sourceMaps: { process: false, files: 0 } },
       options: {
         tools: {
           graph: true,
@@ -96,6 +97,7 @@ describe('inspector listener', () => {
           runs: true,
         },
         requests: { headers: 'names' },
+        debug: { enabled: false, stackFrames: 30 },
       },
     });
   });

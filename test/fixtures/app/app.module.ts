@@ -8,6 +8,7 @@ import {
   type NestMcpListenOptions,
 } from '@jsirp/nestjs-mcp';
 import { CatsModule } from './cats/cats.module.js';
+import { FailingModule } from './failing.module.js';
 import { AppGuard } from './global.guards.js';
 import { HealthModule } from './health.module.js';
 import { LoggedModule } from './logged.module.js';
@@ -47,6 +48,8 @@ export interface FixtureAppOptions {
   wrapped?: boolean;
   /** Import `LoggedModule`: handlers that log through Nest's `Logger`, one of them then throws. */
   logged?: boolean;
+  /** Import `FailingModule`: handlers that throw, one of them from a stack as deep as asked. */
+  failing?: boolean;
   /** Import `RunsModule`: jobs and listeners that throw, succeed and log. Needs both peers. */
   runs?: boolean;
   /** Import `UploadFeatureModule`: multer in a feature module two levels below the root. */
@@ -87,6 +90,7 @@ export class AppModule {
         ...(options.wrapped ? [WrappedModule] : []),
         ...(options.logged ? [LoggedModule] : []),
         ...(options.upload ? [UploadFeatureModule] : []),
+        ...(options.failing ? [FailingModule] : []),
         ...(options.runs ? [RunsModule] : []),
         ...(options.events
           ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]

@@ -8,6 +8,7 @@ export type {
   LogCapture,
   NestMcpAsyncOptions,
   NestMcpAuthorize,
+  NestMcpDebugOptions,
   NestMcpFactoryOptions,
   NestMcpFeatureAsyncOptions,
   NestMcpFeatureOptions,
@@ -20,6 +21,8 @@ export type {
   ToolGroup,
 } from './nest-mcp.options.js';
 export type { AppInfo, AppInfoVersion, AppInfoVersioning } from './tools/app.tools.js';
+export type { DebugStatus } from './debug/debug.js';
+export type { StackFrame } from './debug/stack-frames.js';
 export type {
   RequestTrace,
   TraceError,

@@ -15,6 +15,7 @@ import {
   NEST_MCP_OPTIONS,
   NEST_MCP_TOOL_CONTEXT,
 } from './constants.js';
+import { installDebug } from './debug/debug.js';
 import { installEvents } from './events/install-events.js';
 import { installRuns } from './runs/install-runs.js';
 import { installSchedule } from './schedule/install-schedule.js';
@@ -150,7 +151,8 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
   }
 
   /**
-   * Installs request tracing when the `requests` group is on, the emission recorder when the
+   * Joins the process-wide `debug` (the first instance sets it, before any step or run records an
+   * error), installs request tracing when the `requests` group is on, the emission recorder when the
    * `events` group is, the job and listener wrappers when the `runs` group is, and looks up the
    * scheduler registry when the `schedule` group is. Nest calls `configure` before it builds the
    * routes, and building them binds each exception filter's `catch` for good, so the enhancers are
@@ -160,6 +162,7 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
    */
   configure(consumer: MiddlewareConsumer): void {
     if (!this.options.enabled || !this.context) return;
+    this.context.debug ??= installDebug(this.options.debug);
     if (this.options.tools.events) {
       this.context.events = installEvents(this.modulesContainer, DEFAULT_EVENTS_BUFFER_SIZE);
     }

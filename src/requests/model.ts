@@ -1,3 +1,5 @@
+import type { StackFrame } from '../debug/stack-frames.js';
+
 /** What a step is: an enhancer kind, or the handler itself. */
 export type TraceStepKind = 'guard' | 'interceptor' | 'pipe' | 'filter' | 'handler';
 
@@ -10,6 +12,11 @@ export type TraceStepOutcome = 'allowed' | 'denied' | 'ok' | 'threw' | 'caught';
 export interface TraceError {
   name: string;
   message: string;
+  /**
+   * With `debug` on: the exception's stack, from the throw outwards, at most `debug.stackFrames`
+   * frames. Absent with `debug` off, or when the exception is not an `Error` with a stack.
+   */
+  stack?: StackFrame[];
 }
 
 /** One recorded unit inside a trace. */

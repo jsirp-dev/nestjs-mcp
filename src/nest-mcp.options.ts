@@ -7,6 +7,7 @@ import {
   DEFAULT_LOGS_BUFFER_SIZE,
   DEFAULT_REQUESTS_BUFFER_SIZE,
   DEFAULT_RUNS_BUFFER_SIZE,
+  MAX_STACK_FRAMES,
 } from './constants.js';
 import { isLogSink, type LogSink } from './logs/log-sink.js';
 import type { LogNormalizer } from './logs/normalize.js';
@@ -59,6 +60,12 @@ export interface NestMcpLogsOptions {
   normalize?: LogNormalizer;
 }
 
+/** What `debug: { ... }` sets; `debug: true` takes every default. */
+export interface NestMcpDebugOptions {
+  /** Frames kept per error, from the top. Default and maximum `30`. */
+  stackFrames?: number;
+}
+
 /** Access control over the raw request on the listener; `false` (or a throw) answers 403. */
 export type NestMcpAuthorize = (req: IncomingMessage) => boolean | Promise<boolean>;
 
@@ -87,6 +94,12 @@ export interface NestMcpOptions {
    * the first instance that installs it sets its size. Default `{ bufferSize: 500 }`.
    */
   runs?: { bufferSize?: number };
+  /**
+   * Debugging data in traces and runs: each error a step or a run records carries its stack,
+   * mapped to the original source when a source map is found. Off by default, whatever `enabled`
+   * is. Process-wide: the first instance decides, so give every instance the same value.
+   */
+  debug?: boolean | NestMcpDebugOptions;
   /** What the server reports in `initialize`. Default: the app's `package.json`. */
   serverInfo?: { name?: string; version?: string };
 }
@@ -125,7 +138,13 @@ export interface ResolvedNestMcpOptions {
   };
   requests: { bufferSize: number; idHeader: string; headers: RequestHeadersMode };
   runs: { bufferSize: number };
+  debug: ResolvedDebugOptions;
   serverInfo: { name: string; version: string };
+}
+
+export interface ResolvedDebugOptions {
+  enabled: boolean;
+  stackFrames: number;
 }
 
 /** The default of `enabled`: the only `process.env` the package reads. */
@@ -212,6 +231,24 @@ function resolveLogs(logs: NestMcpLogsOptions | undefined): ResolvedNestMcpOptio
   };
 }
 
+function resolveDebug(debug: NestMcpOptions['debug']): ResolvedDebugOptions {
+  if (debug === undefined || typeof debug === 'boolean') {
+    return { enabled: debug === true, stackFrames: MAX_STACK_FRAMES };
+  }
+  if (typeof debug !== 'object' || debug === null) {
+    throw new Error(
+      `NestMcpModule: \`debug\` must be a boolean or \`{ stackFrames? }\`, got ${String(debug)}.`,
+    );
+  }
+  const stackFrames = positiveInteger(debug.stackFrames, MAX_STACK_FRAMES, 'debug.stackFrames');
+  if (stackFrames > MAX_STACK_FRAMES) {
+    throw new Error(
+      `NestMcpModule: \`debug.stackFrames\` must be at most ${MAX_STACK_FRAMES}, got ${stackFrames}.`,
+    );
+  }
+  return { enabled: true, stackFrames };
+}
+
 /** Every default applied, `path` normalised and the values checked. */
 export function resolveOptions(
   options: NestMcpOptions = {},
@@ -255,6 +292,7 @@ export function resolveOptions(
         'runs.bufferSize',
       ),
     },
+    debug: resolveDebug(options.debug),
     serverInfo: {
       name: options.serverInfo?.name ?? host.name ?? 'nestjs-app',
       version: options.serverInfo?.version ?? host.version ?? '0.0.0',

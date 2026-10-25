@@ -13,6 +13,98 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### The `debug` option: source-mapped stacks on failing steps (ticket #25, 2026-10-25)
+
+#### Done
+
+- New option `debug: boolean | { stackFrames? }`, default `false` whatever `enabled` is, on
+  `forRoot`, `forFeature` and their `*Async` factories. Process-wide like `logs`: the first instance
+  whose module is configured sets it, every later one keeps it, and it is cleared when the last
+  instance is destroyed, so an app created after another closed in the same process decides afresh.
+- With it on, `TraceError` gains `stack: StackFrame[]`, each `{ function, file, line?, column?,
+  mapped, external? }`, at most `debug.stackFrames` (default and maximum 30), from the throw
+  outwards. It is on every error a trace records: the step that threw (guard, interceptor, pipe,
+  handler, a filter that threw) and the filter step with the exception it caught.
+- **Also on runs**: the error of a job or listener run is built by the same `describeError`, so
+  `run_get` and `runs_list` carry the stack too, at no extra cost.
+- Mapping, without a dependency (`node:module`): a stack Node already mapped
+  (`--enable-source-maps`, `process.setSourceMapsEnabled`) is read as it is; otherwise each frame
+  of a JavaScript file is looked up in Node's `findSourceMap` and, failing that, in the map the
+  file's `sourceMappingURL` comment points to (a sibling `.js.map` or an inline `data:` URL), read
+  once per file and cached (at most 1000 files). Sources are resolved against the map and its
+  `sourceRoot`; `sourcesContent` is dropped before the map is built.
+- `app_info` gains `debug: { enabled, stackFrames, sourceMaps: { process, files } }` (what the
+  process runs: whether Node maps stacks, and how many compiled files' own maps the inspector read)
+  and `options.debug` (what this instance was given).
+- `src/debug/`: `stack-frames.ts` (parser, `SourceMaps`), `debug.ts` (the process-wide state,
+  `stackOf`, `debugStatus`). Exported types `NestMcpDebugOptions`, `StackFrame`, `DebugStatus`.
+- README (options, the new "Debug: stacks of failing steps" section, `app_info`, Runs, How it works,
+  Limitations), `GLOSSARY.md` (*frame*), `00-overview.md` (the option).
+
+#### Deviations from the ticket
+
+- **"On the step that threw, and on the trace"**: a trace has no error of its own (`RequestTrace`
+  has no `error` field); the trace's errors are its steps'. Every one of them gets the stack,
+  including the filter step's caught exception. No top-level field was added.
+- **`stackFrames` is configurable downwards only** (1 to 30): the ticket fixes the bound at 30, and
+  the object form needs at least one field until #26 adds its own.
+
+#### Hot decisions
+
+- **Parse `error.stack`, never install anything**: structured call sites exist only through a
+  global `Error.prepareStackTrace` at the moment V8 formats the stack, which would change what the
+  app's own stacks look like and fight `source-map-support`. Reading `error.stack` is what any
+  logger does (Nest's `ExceptionsHandler` already does). `Error.stackTraceLimit` is not touched
+  either, so the frames are as many as V8 captured (10 by default).
+- **Map at record time, not when the tool answers**: the position is that of the code that ran; a
+  watch-mode rebuild between the throw and the question would otherwise remap against new code.
+- **`mapped` means "the position is the original source's"**: true when the inspector mapped it,
+  and also for a file that is not JavaScript (`.ts`, `.tsx`…), which can only come from a stack the
+  process mapped already (Node's source maps, `source-map-support`, jest) or from code run as it is.
+  A `node:` frame and any `.js`/`.cjs`/`.mjs` position without a map are `mapped: false`.
+- **External frames are not mapped**: `node_modules`, `node:`, and frames without a file
+  (`<anonymous>`, `native`, `index 0`) are kept with the position V8 gave and `external: true`. It
+  saves a file read per dependency frame, and the agent skips them anyway.
+- **A source with another URL scheme** (`webpack://app/./src/main.ts`) is kept as written, not
+  resolved into a path that does not exist.
+- **Only `Error` instances get a stack** (`instanceof Error` is safe: it is not a Nest class). A
+  thrown string or plain object keeps `{ name, message }`.
+
+#### Notes for the next session (#26)
+
+- `locals` goes next to `stack` in `TraceError`, aligned with it: `stack[i]` is the frame whose
+  scopes `locals[i]` would hold. `stackOf()` in `src/debug/debug.ts` is the one place that decides
+  whether a recorded error gets debugging data; the process-wide `active` options there are where
+  `debug.locals` bounds belong. `ResolvedDebugOptions` and `resolveDebug` in
+  `src/nest-mcp.options.ts` take the new fields; `NestMcpDebugOptions` is the object form.
+- `installDebug`/`release` in `configure`/`onModuleDestroy` already give the lifecycle a worker
+  thread needs: start it on the first install, stop it on the last release.
+- Mapping happens inside `describeError`, synchronously, on the app's request path, but only with
+  `debug` on; a file's map costs one read the first time a frame lands in it.
+
+#### Verification
+
+`test/stack-frames.spec.ts` (10 tests): every frame form V8 writes (named, location only,
+`async`, `new`, `<anonymous>`, `node:`, `node_modules`, `file://` URLs), the frame limit, a `.ts`
+position taken as mapped, garbage that does not throw, mapping through a sibling `.js.map` and an
+inline map with `sourceRoot`, a `webpack://` source, missing, unreadable and absent maps, one read
+per file and no `sourcesContent` kept, external frames left unmapped. `test/debug.spec.ts` (9
+tests, new fixture `FailingModule`, opt-in `failing: true`): off by default the error keys are
+exactly `name, message`; on, the handler's `stack[0]` is `FailingController.plain` at the fixture's
+throw line; `ApiKeyGuard`'s throw and the `NotFoundFilter` step (its caught exception) and the
+handler of the same request carry the stack; 60 recursive calls with `Error.stackTraceLimit = 100`
+give 30 frames; `node:` and `node_modules` frames are `external: true` and no other is; the object
+form's `stackFrames: 2`; `app_info.debug`; one instance decides for both instances of an app; a
+cron run's error carries the stack; wrong shapes are rejected. `test/debug-compiled.spec.ts` (3
+tests): the fixture `test/fixtures/compiled/app.ts`, compiled for real with `ts.transpileModule`
+into a temp directory and run in a child process (ts-jest maps in-process stacks itself, so only a
+child sees compiled ones): with its `.js.map`, `stack[0]` is the fixture's `.ts` at the throw line,
+`mapped: true`, `sourceMaps.files: 1`; without a map, the compiled `app.js` at its own throw line,
+`mapped: false`, nothing thrown; with `--enable-source-maps`, the `.ts` line and
+`sourceMaps.process: true`. Red check: with the own-map lookup disabled, the first compiled test
+fails (`app.js`, `mapped: false`). `yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`,
+`yarn test` (23 suites / 275 tests) green on Nest 11.2.8 (Node 20.19 and 22.18) and on Nest 10.4.22 (scratch copy).
+
 ### Each run of a scheduled job or event listener is recorded (ticket #28, 2026-10-25)
 
 #### Done

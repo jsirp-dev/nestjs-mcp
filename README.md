@@ -132,6 +132,8 @@ All optional, except `path` in `forFeature`.
 | `requests.idHeader` | `'x-nest-mcp-request-id'` | The correlation header an agent sets to find a request's trace. Read, never echoed back. |
 | `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never. |
 | `runs.bufferSize` | `500` | How many job and listener runs are kept. One buffer per app: the first instance that installs it sets the size. |
+| `debug` | `false` | `true` or `{ stackFrames? }`: each error a trace step or a run records carries its `stack`, as frames mapped to your source. Off by default, whatever `enabled` is. Process-wide: the first instance decides, so give every instance the same value. See [Debug: stacks of failing steps](#debug-stacks-of-failing-steps). |
+| `debug.stackFrames` | `30` | Frames kept per error, from the throw outwards; at most `30`. |
 | `serverInfo` | your app's `package.json` | `{ name, version }` the server reports in the MCP `initialize` handshake. |
 
 `authorize` is a plain function, not a Nest guard: there is no `ExecutionContext`. Close over what
@@ -152,7 +154,7 @@ NestMcpModule.forRootAsync({
 
 | Group | Tools | Status |
 |-------|-------|--------|
-| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path and URL (`mcpPath`, `mcpUrl`), instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
+| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path and URL (`mcpPath`, `mcpUrl`), instance scope, whether `snapshot` is on, which groups are live, `debug` (whether it is on and how stacks are mapped), and the instance's tool switches, `requests.headers` policy and `debug` | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
@@ -437,6 +439,41 @@ TimingInterceptor exit threw`, status 400.
   reused the same id are not listed. They are listed whatever the instance's scope, since the trace
   itself already is in scope. Lines are matched as `requestId` says, with its limits.
 
+### Debug: stacks of failing steps
+
+With `debug: true`, every `error` in a trace (on the step that threw, and on the filter step with
+the exception it caught) and the `error` of a [run](#runs) carry `stack`: the exception's frames,
+from the throw outwards, at most `debug.stackFrames` (30).
+
+```json
+"error": {
+  "name": "NotFoundException",
+  "message": "Cat 999 not found",
+  "stack": [
+    { "function": "CatsController.findOne", "file": "/app/src/cats/cats.controller.ts", "line": 31, "column": 21, "mapped": true },
+    { "function": "<anonymous>", "file": "/app/node_modules/@nestjs/core/router/router-execution-context.js", "line": 38, "column": 29, "mapped": false, "external": true }
+  ]
+}
+```
+
+- **`file`, `line` and `column` are the original source's when a source map is found** (`mapped:
+  true`): Node's own, when the process runs with `--enable-source-maps` or
+  `process.setSourceMapsEnabled(true)` (then the stack is already mapped and read as it is), or else
+  the one the compiled file points to with its `sourceMappingURL` comment (a `.js.map` next to it, as
+  `tsc` and the Nest CLI write with `sourceMap: true`, or an inline map). Without one, the frame keeps
+  the compiled position with `mapped: false`. A position in a file that is not JavaScript (`.ts`) is
+  `mapped: true`: something mapped it already, or the process runs it as it is. The inspector never
+  turns source maps on in the process; `app_info.debug.sourceMaps` says whether Node applies them
+  (`process`) and how many compiled files' own maps the inspector has read (`files`).
+- **`external: true`** flags frames in `node_modules`, `node:` internals and frames without a file
+  (`<anonymous>`, `native`), so an agent can skip to your code. They are kept, unmapped.
+- **Only positions are stored**: function name, file, line, column. No source text (a map's
+  `sourcesContent` is dropped when it is read), no variables, no arguments.
+- **Off, nothing changes**: errors are `{ name, message }` as before, and no stack is read.
+- The stack is read when the error is recorded, from `error.stack`, as any logger would read it; a
+  compiled file's map is read once and kept. How many frames there are is V8's
+  `Error.stackTraceLimit` (10 unless your process raises it); the inspector does not change it.
+
 ### Events
 
 With `@nestjs/event-emitter` installed and `EventEmitterModule` imported, the inspector lists who
@@ -514,8 +551,8 @@ and only log it. Without either package, or with `tools.runs: false`, nothing is
   itself is not recorded. `name` matches the job's decorator name or `Class.method`; `event` matches a
   substring of the emitted event or, as a pattern, what the emitter would match (`cat.*`).
 - **Never the event payload or the job's arguments.** A run keeps the class, method, module, job
-  name or event, times, outcome and the error's name and message; `requestId` when it started inside
-  a traced request.
+  name or event, times, outcome and the error's name and message (and its `stack` with
+  [`debug`](#debug-stacks-of-failing-steps)); `requestId` when it started inside a traced request.
 - **The error line the scheduler (`Scheduler`) or the emitter (`Event`) logs after the method threw
   is written outside the run**, so it is in `logs_tail` without the `runId`; the run's `error` has
   what was thrown.
@@ -554,6 +591,10 @@ and only log it. Without either package, or with `tools.runs: false`, nothing is
   `emit`/`emitAsync` (wrapped to know the event) for an event the method listens to. Each wrapper
   returns what the original returned (the same promise) and throws what it threw
   ([ADR-0006](docs/adr/0006-runs-by-wrapping-job-and-listener-methods.md)).
+- **Stacks by reading `error.stack`.** With `debug` on, the error a step or a run records is
+  parsed from the stack V8 formatted, and each frame is looked up in the compiled file's source map
+  (`node:module`'s `findSourceMap` and `SourceMap`; no dependency). Nothing is installed: no
+  `Error.prepareStackTrace`, no change to `Error.stackTraceLimit` or to the process's source maps.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling the inspector's listener.
 
@@ -610,6 +651,11 @@ from `authorize` or put a reverse proxy before the listener.
   nor for jobs your app adds to `SchedulerRegistry` itself, which run its own callbacks. A method
   that is both a job and a listener records a job run when the scheduler calls it outside an
   emission.
+- With `debug`, an exception that is not an `Error` (a thrown string or plain object) has no
+  `stack`. Frames are as deep as `Error.stackTraceLimit` lets V8 capture. A stack another library
+  already mapped from JavaScript to JavaScript (a bundle's map applied by a custom
+  `Error.prepareStackTrace`) is read as compiled code. A compiled file rebuilt while the process runs
+  keeps the map read the first time.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

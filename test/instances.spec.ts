@@ -43,7 +43,7 @@ describe('inspector instances', () => {
   });
 
   describe('app_info options', () => {
-    it('reports the resolved tool switches and header policy, with their defaults', async () => {
+    it('reports the resolved tool switches, header policy and debug, with their defaults', async () => {
       const app = await start();
 
       expect((await appInfo(app, '/')).options).toEqual({
@@ -57,6 +57,7 @@ describe('inspector instances', () => {
           runs: true,
         },
         requests: { headers: 'names' },
+        debug: { enabled: false, stackFrames: 30 },
       });
     });
 
