@@ -66,7 +66,7 @@ function describeVersioning(versioning: VersioningOptions | undefined): AppInfoV
   return described;
 }
 
-function describeScope(kind: InstanceScopeKind): AppInfo['scope'] {
+export function describeScope(kind: InstanceScopeKind): AppInfo['scope'] {
   // Phase 2 resolves which module imported a `forFeature` instance.
   return kind === 'app' ? { kind: 'app' } : { kind: 'module', module: null };
 }

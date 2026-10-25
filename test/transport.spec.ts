@@ -53,7 +53,7 @@ describe('inspector endpoint', () => {
       scope: { kind: 'app' },
       snapshot: true,
       tools: {
-        graph: false,
+        graph: true,
         routes: false,
         logs: false,
         requests: false,

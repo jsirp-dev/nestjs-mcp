@@ -23,11 +23,8 @@ import {
   type ResolvedNestMcpOptions,
 } from './nest-mcp.options.js';
 import { ToolRegistry } from './tools/registry.js';
-import {
-  createToolContext,
-  type ApplicationConfigLike,
-  type SerializedGraphLike,
-} from './tools/tool-context.js';
+import type { SerializedGraphLike } from './graph/graph-reader.js';
+import { createToolContext, type ApplicationConfigLike } from './tools/tool-context.js';
 import { NestMcpToolsSetup } from './tools/tools-setup.js';
 import { EnabledGuard } from './transport/enabled.guard.js';
 import { LocalOnlyGuard } from './transport/local-only.guard.js';

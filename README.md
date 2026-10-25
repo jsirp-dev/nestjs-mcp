@@ -122,14 +122,38 @@ dependencies must come from a global module or, in the async variants, from `imp
 | Group | Tools | Status |
 |-------|-------|--------|
 | `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
-| `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | planned |
+| `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` (each route with its guards, interceptors, pipes and filters, global → controller → method) | planned |
 | `logs` | `logs_tail`, `logs_levels` | planned |
 | `requests` | `requests_list`, `request_trace` | planned |
 | `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | planned |
 
 Every tool returns JSON as a single text block. Errors come back as `{ "error": "<code>", "hint": "…" }`
-with `isError: true`.
+with `isError: true`, plus what helps to retry (`candidates`, for example).
+
+### Graph
+
+Read from the serialized graph Nest keeps with `snapshot: true`, never from source. Every answer
+carries `scope`, the boundary the instance observes.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `graph_modules` | `includeInternal?` | Each module: `global`, `dynamic`, provider and controller counts, `imports` |
+| `graph_module` | `name`, `includeInternal?` | Imports, exports, providers (`token`, `scope`, `exported`), controllers, `importedBy` |
+| `graph_providers` | `filter?`, `module?`, `scope?`, `includeInternal?` | Providers and injectables; enhancers carry `subtype` (`guard`, `pipe`, …) and, when registered globally, `global: true` |
+| `graph_provider` | `token`, `module?`, `includeInternal?` | Module, injection scope, `dependsOn`, `dependents`, `initTimeMs` |
+| `graph_cycles` | — | `cycles`: module import cycles and class injection cycles; `[]` when there are none |
+
+- Tokens are text: a class by its name, a string or symbol token by its description. Instances are
+  never returned.
+- Nest's own modules and providers (`InternalCoreModule`, `ModuleRef`, `ApplicationConfig`, …) are
+  hidden unless `includeInternal: true`.
+- Modules that share a class name (two dynamic instances of one module, for example) are listed as
+  `Name#1`, `Name#2` in the order Nest registered them; use those names as input.
+- `dependsOn` and `dependents` count constructor and property injection. Enhancers attached with
+  `@UseGuards` and friends are not dependencies; the `routes` tools report them.
+- An unknown name answers `not_found` with up to five similar `candidates`; a token declared in several
+  modules answers `ambiguous` with each `{ token, module }`, and `module` picks one.
 
 ## How it works
 

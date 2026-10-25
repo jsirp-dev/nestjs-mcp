@@ -12,11 +12,15 @@ export interface ToolDefinition {
   handler(input: Record<string, unknown>): unknown;
 }
 
-/** A failure a tool reports to the agent as `{ error, hint }` with `isError: true`. */
+/**
+ * A failure a tool reports to the agent as `{ error, hint, ...details }` with `isError: true`.
+ * `details` carries what helps the agent retry, such as `candidates`.
+ */
 export class ToolError extends Error {
   constructor(
     readonly code: string,
     readonly hint: string,
+    readonly details: Record<string, unknown> = {},
   ) {
     super(`${code}: ${hint}`);
   }

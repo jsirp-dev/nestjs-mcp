@@ -2,6 +2,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from '../constants.js';
 import type { ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 import { registerAppTools } from './app.tools.js';
+import { registerGraphTools } from './graph.tools.js';
 import { ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
 
@@ -17,6 +18,6 @@ export class NestMcpToolsSetup implements OnModuleInit {
   onModuleInit(): void {
     if (!this.options.enabled) return;
     registerAppTools(this.registry, this.context);
-    // Later phases: `if (this.options.tools.graph) registerGraphTools(this.registry, this.context);`
+    if (this.options.tools.graph) registerGraphTools(this.registry, this.context);
   }
 }

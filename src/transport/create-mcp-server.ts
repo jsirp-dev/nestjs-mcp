@@ -28,7 +28,8 @@ async function run(tool: ToolDefinition, input: Record<string, unknown>): Promis
   try {
     return text(await tool.handler(input));
   } catch (error) {
-    if (error instanceof ToolError) return text({ error: error.code, hint: error.hint }, true);
+    if (error instanceof ToolError)
+      return text({ error: error.code, hint: error.hint, ...error.details }, true);
     const message = error instanceof Error ? error.message : String(error);
     return text({ error: 'internal_error', hint: message }, true);
   }

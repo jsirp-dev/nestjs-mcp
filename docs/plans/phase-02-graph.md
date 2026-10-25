@@ -20,7 +20,7 @@ and is injected by `CatsController`; the `forFeature` instance mounted in `CatsM
 
 ## Prerequisites
 
-- [ ] Phase 1 closed (two commits on `main`).
+- [x] Phase 1 closed (two commits on `main`).
 - [ ] `yarn test` green at start.
 
 ## Closed decisions for this phase
@@ -99,13 +99,13 @@ Every answer carries `scope` so the agent knows what it is looking at.
 
 ## Verification / definition of done
 
-- [ ] `yarn test` green with `graph.spec.ts`.
-- [ ] With `snapshot: false` the five tools answer `snapshot_disabled` with `isError: true`.
-- [ ] `graph_provider` on an unknown token answers `{ error: 'not_found', candidates: [...] }` with up
+- [x] `yarn test` green with `graph.spec.ts`.
+- [x] With `snapshot: false` the five tools answer `snapshot_disabled` with `isError: true`.
+- [x] `graph_provider` on an unknown token answers `{ error: 'not_found', candidates: [...] }` with up
       to five similar names.
-- [ ] No answer contains instances or functions (`JSON.stringify` without `[Function]` or cycles).
+- [x] No answer contains instances or functions (`JSON.stringify` without `[Function]` or cycles).
 - [ ] The `forFeature` instance's `graph_modules` excludes modules outside its closure.
-- [ ] `yarn build`, `lint`, `type-check` green.
+- [x] `yarn build`, `lint`, `type-check` green.
 
 ## Likely stumbles
 
