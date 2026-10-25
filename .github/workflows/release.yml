@@ -1,0 +1,93 @@
+name: release
+
+# A real release: the person runs `npm version patch|minor|major` and `git push --follow-tags`.
+# A tag ending in `-test` (for example `v0.0.0-test`), or a manual run with `dry-run`, goes through
+# every step with `npm publish --dry-run` and creates no GitHub release.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Run npm publish with --dry-run
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+      DRY_RUN: >-
+        ${{ (github.event_name == 'workflow_dispatch' && inputs.dry-run) ||
+        endsWith(github.ref_name, '-test') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn build
+
+      - name: Check the tag matches package.json
+        if: env.DRY_RUN != 'true'
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_TYPE}" != tag ] || [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::ref ${GITHUB_REF_NAME} does not match package.json version $version"
+            exit 1
+          fi
+
+      # The `## x.y.z` section of CHANGELOG.md, up to the next `## ` heading or the `---` rule.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version=$(node -p "require('./package.json').version")
+          awk -v v="$version" '
+            $0 == "## " v || index($0, "## " v " ") == 1 { found = 1; next }
+            found && (/^## / || /^---$/) { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            if [ "$DRY_RUN" = true ]; then
+              echo "No \`## $version\` section in CHANGELOG.md (dry run, not an error)."
+            else
+              echo "::error::CHANGELOG.md has no \`## $version\` section"
+              exit 1
+            fi
+          fi
+          cat release-notes.md
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            npm publish --provenance --access public --dry-run
+          else
+            npm publish --provenance --access public
+          fi
+
+      - name: GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md

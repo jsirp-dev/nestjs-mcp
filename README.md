@@ -387,6 +387,37 @@ Opening it to the network without guards works, and logs a warning at every star
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.
 
+## Contributing
+
+The package is its own Yarn 4 project (`packageManager` pins the version; `corepack enable` once).
+
+```bash
+yarn install --immutable
+yarn format-check && yarn lint && yarn type-check
+yarn build && yarn test   # the suite imports dist/index.cjs: build first
+```
+
+The devDependencies run the suite on Nest 11. To run it on Nest 10, install the four Nest packages at
+once (so the tree holds one major), run the suite, then throw the change away:
+
+```bash
+yarn add -D @nestjs/common@^10 @nestjs/core@^10 @nestjs/platform-express@^10 @nestjs/testing@^10
+yarn build && yarn test
+git checkout package.json yarn.lock && yarn install
+```
+
+CI (`.github/workflows/ci.yml`) runs format, lint, type-check, build and the suite on every push to
+`main` and every pull request, on Nest 10 and 11, each on Node 20 and 22. Branch protection
+on `main` requires the four `ci` checks to pass; a maintainer sets it in the repository settings, it
+is not part of this repo.
+
+Releases are cut by a maintainer, never by the workflow: add a `## x.y.z` section at the top of
+`CHANGELOG.md`, run `npm version patch|minor|major` (commit and `vx.y.z` tag), then
+`git push --follow-tags`. The tag starts `.github/workflows/release.yml`: the full CI matrix, then
+`npm publish --provenance --access public` (with the `NPM_TOKEN` repository secret) and a GitHub
+release whose notes are that `CHANGELOG.md` section. A manual run of the workflow, or a tag ending in
+`-test`, does all of it with `npm publish --dry-run` and creates no release.
+
 ## License
 
 MIT

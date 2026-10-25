@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci (Nest ${{ matrix.nest }}, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        nest: [10, 11]
+        node: [20, 22]
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Yarn 4 comes from `packageManager` through corepack.
+      - run: corepack enable
+
+      - id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ runner.os }}-node${{ matrix.node }}-nest${{ matrix.nest }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-${{ runner.os }}-node${{ matrix.node }}-nest${{ matrix.nest }}-
+
+      - run: yarn install --immutable
+
+      # The four packages at once so the tree holds a single Nest major. The lock changes only in
+      # this job's workspace; yarn makes installs immutable on CI by default, hence the override.
+      - name: Install Nest 10
+        if: matrix.nest == 10
+        env:
+          YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
+        run: >-
+          yarn add -D @nestjs/common@^10 @nestjs/core@^10 @nestjs/platform-express@^10
+          @nestjs/testing@^10
+
+      - name: Nest version under test
+        run: |
+          version=$(node -p "require('@nestjs/core/package.json').version")
+          echo "@nestjs/core $version"
+          case "$version" in
+            ${{ matrix.nest }}.*) ;;
+            *) echo "::error::expected @nestjs/core ${{ matrix.nest }}.x, got $version"; exit 1 ;;
+          esac
+
+      - run: yarn format-check
+      - run: yarn lint
+      - run: yarn type-check
+      # Yarn 4 does not run `pretest`; the suite consumes dist/index.cjs.
+      - run: yarn build
+      - run: yarn test
