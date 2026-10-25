@@ -13,6 +13,96 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 6 — Events, listeners and scheduled jobs (2026-10-25)
+
+**Work commits:** `c72c28d` (ticket #8, events), `9449ed5` (ticket #9, schedule).
+
+### Done
+
+- Optional peers by guarded `require` (`src/support/optional-peer.ts`, `tryRequire`) and the
+  container walk `src/support/for-each-instance.ts` (`forEachInstance`, aliases skipped, wrappers
+  without instance included). `app_info.tools.events` and `.schedule` are real.
+- Events (#8): `events_listeners({ event?, scope? })`, every `@OnEvent` listener of providers and
+  controllers (request-scoped ones flagged `requestScoped`), read from metadata through descriptors;
+  `events_recent({ limit?, event? })`, `emit`/`emitAsync` wrapped once on the app's `EventEmitter2`
+  (`Symbol.for('nestjs-mcp.emit-recorder')`, shared by every instance), `{ seq, event, method,
+  timestamp, listeners }`, never the payload, `emissions: 'app-wide'`.
+- Schedule (#9): `schedule_jobs({ kind?, scope? })` reads `SchedulerRegistry` per call: cron jobs
+  (`expression`, `timeZone` when not the process's, `running`, `lastRun`, `nextRun` while running),
+  intervals (`everyMs`) and timeouts (`delayMs`, `running: false` once fired or cleared), the ones
+  the app added by hand included. `@Cron`/`@Interval`/`@Timeout` metadata gives class, method and
+  module.
+- Fixture: opt-in `events` and `schedule` (`AppModule.with`); `CatsService` has `onCatAdopted`,
+  `onAnyCatEvent` (`cat.*`), the cron `cleanup` (`0 3 * * *`), an unnamed cron `weeklyReport` and the
+  interval `refresh`; `HealthController` has `onAppReady` and the timeout `warmup`.
+  `test/events.spec.ts` (18), `test/schedule.spec.ts` (12), `test/without-peers.spec.ts` (1, both
+  peers). "Events" and "Scheduled jobs" sections and limitations in the README.
+
+### Deviations from the plan
+
+- `EVENT_LISTENER_METADATA` is not exported from the package entry in event-emitter v3 (only from
+  `dist/constants`): it is the literal string, the same in v1-v3. The schedule metadata keys are
+  literals too, the same strings in schedule 4 and 6 (checked against both tarballs): no import of
+  either peer in `src/`.
+- The emitter and the registry are found by walking providers: token === the peer's class, else a
+  class token with the same name (another copy of the package). Extra files
+  `src/events/install-events.ts` and `src/schedule/install-schedule.ts` (find + install).
+- The events buffer is a constant of 500 (`DEFAULT_EVENTS_BUFFER_SIZE`), not an option: the overview
+  promises none.
+- The job model adds `module`, `timeZone` and `delayMs`: a timeout's delay is not a period
+  (`everyMs` stays for intervals only).
+- Not `MetadataScanner`: both readers walk prototypes through descriptors (no getter of the app
+  runs), now shared in `src/support/class-methods.ts`; the module naming of both tool groups moved
+  to `src/tools/module-name.ts`.
+
+### Hot decisions
+
+- Both groups are installed in `NestMcpModule.configure` (before every `onModuleInit` of the app),
+  so emissions from the app's own hooks are recorded; the tools register in
+  `NestMcpToolsSetup.onModuleInit` only if `context.events` / `context.schedule` was set.
+- Wildcards and the `event` filters resolve through a probe emitter of the app's own class with the
+  same `wildcard`/`delimiter`; equality if it cannot be built. `listeners` = `listenerCount(event)`
+  at emission time, before the listeners run.
+- A decorated job is matched to the registry by name; an unnamed one (the registry knows it by a
+  generated id) by expression or period, only when exactly one job on each side has it.
+- Scope: jobs declared by classes in scope. A job the app added to the registry by hand has no class
+  and no module, so only an app-wide answer (`forRoot`, or `scope: 'app'`) lists it.
+- Interval and timeout periods and pending state come from Node's `Timeout` (`_idleTimeout`,
+  `_destroyed`), duck-typed; the decorator's value fills the period when the timer has none.
+- `running` is cron 4's `isActive`, else cron 3's `running`; `nextRun` is `nextDate().toISO()`, else
+  `toString()`, and is left out for a stopped job. Every read of a job is guarded: an odd job
+  answers with what could be read.
+
+### Stumbles and resolutions
+
+- `npx prettier` resolves another Prettier than the repo's (`yarn prettier`), and they disagree on
+  some files: format with the repo's.
+- Decorated jobs in the fixture schedule real timers; `ScheduleModule` clears them all on
+  `app.close()` (dynamic ones included), so jest exits cleanly.
+
+### Critical information for later phases
+
+- **Phase 6b**: devDependencies `@nestjs/event-emitter@^3.0.0` and `@nestjs/schedule@^6.0.0`, both
+  with peers Nest `^10 || ^11`; the Nest 10 leg is their first run there. Schedule 4 (cron 3) is
+  covered only by a unit test of the reader with a cron-3-shaped job.
+- **Phase 7**: listeners added by hand with `emitter.on(...)` count in `listeners` but are not
+  listed; decorated jobs `ScheduleModule` did not register (request-scoped providers, a kind switched
+  off in `forRoot`) are not listed.
+- `wrap-enhancers.ts` keeps its own container loop (moving it onto `forEachInstance` is a cleanup).
+
+### Verification
+
+- `yarn test` at start of #9: 14 suites, 152 tests green.
+- `yarn build && yarn test`: 15 suites, 164 tests green. `schedule.spec.ts` covers `cleanup` with
+  its expression and an ISO `nextRun` at 03:00, the unnamed cron matched by expression, decorated and
+  registry-added intervals, timeouts and cron jobs with their period, a stopped cron and a fired
+  timeout, `kind`, module scope and `scope: 'app'`, `app_info`, an app without `ScheduleModule` and
+  `tools.schedule: false`; two unit tests read cron-3-shaped jobs and metadata without
+  `SCHEDULER_NAME`.
+- `without-peers.spec.ts` green; a control run without the `@nestjs/schedule` mock fails listing
+  `schedule_jobs`, so the guarded require is what keeps the group out.
+- `yarn lint`, `yarn type-check`, `yarn format-check`, `yarn build` and the pre-commit hook: exit 0.
+
 ## Phase 5 — Request traces through guards, interceptors, pipes, filters and handler (2026-10-25)
 
 **Work commit:** `c267821` (ticket #7).
