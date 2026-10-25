@@ -8,8 +8,8 @@ interceptors, pipes and filters it goes through, what the app's `Logger` is writ
 enhancers a given request passed through and how long each took, event listeners and scheduled jobs.
 Nothing to install on the agent side: it points at a URL of your app.
 
-> Status: **0.1.0 in development**. Today the endpoint and `app_info` work; the other tool groups land
-> one by one (see [Tools](#tools)).
+> Status: **0.1.0 in development**. Today the endpoint, `app_info`, the graph, routes and logs work;
+> the other tool groups land one by one (see [Tools](#tools)).
 
 ## Install
 
@@ -129,7 +129,7 @@ dependencies must come from a global module or, in the async variants, from `imp
 | `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` | ✅ |
-| `logs` | `logs_tail`, `logs_levels` | planned |
+| `logs` | `logs_tail`, `logs_levels` | ✅ |
 | `requests` | `requests_list`, `request_trace` | planned |
 | `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | planned |
 
@@ -194,6 +194,37 @@ controller handlers are ordinary routes; one served by a middleware of its own i
   Plain paths match exactly; wildcards match by the prefix before them, and `exclude(...)` is not
   read, so the list is approximate (`route_get` says so in `middlewaresMatch`).
 
+### Logs
+
+At startup the module wraps the logger your app set (with `app.useLogger`, the `logger` option of
+`NestFactory.create`, or Nest's default `ConsoleLogger`) in a **transparent tee**: every call to
+Nest's `Logger` reaches your logger exactly as it was made, and a copy goes to an in-memory ring
+buffer of `logs.bufferSize` entries. Nothing is masked, filtered or altered, and nothing is persisted.
+The tee is installed once per process and shared by every instance, so the first instance that
+installs it decides `logs.bufferSize`; switching the `logs` group off in every instance installs
+nothing.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, timestamp, level, context, message, stack? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
+| `logs_levels` | — | `levels` your logger has on (`null` if it has no `isLevelEnabled`) and the `buffer`: `size`, `length`, `lastSeq` |
+
+- Levels are Nest's: `verbose`, `debug`, `log`, `warn`, `error`, `fatal`. `minLevel` keeps that level
+  and the more severe ones.
+- `context` is the trailing string argument, as `ConsoleLogger` reads it: the class name for a
+  `new Logger(MyService.name)`. In `error`, the multi-line string before it is the `stack`.
+  Non-string messages are stored as JSON, capped at 2000 characters.
+- `seq` grows by one per entry and never repeats. Without `sinceSeq` the answer is the newest
+  `limit` entries; with it, the oldest `limit` after it, so paging never skips or repeats one.
+- A **`forFeature` instance keeps only entries whose context is the name of a class in its scope**
+  (controllers, providers, injectables) and says so in `scopeFilter`. It is approximate: a context that
+  is not a class name, or a class name shared with another module, is judged by name alone.
+  `scope: 'app'` lifts the filter.
+- A level your logger reports as disabled (`isLevelEnabled`) is forwarded as usual but not copied,
+  so the buffer holds what your logger keeps. With `logger: false` nothing is printed, as before,
+  and the buffer still fills.
+- The inspector's own lines (context `NestMcp`) are in the buffer too.
+
 ## How it works
 
 - **Stateless Streamable HTTP.** Each `POST` gets its own MCP server and transport, answered and closed.
@@ -219,8 +250,15 @@ Opening it to the network without guards works, and logs a warning at every star
 - Verified with Express. Fastify is not supported in v1.
 - `graph_*` and `routes_*` need `snapshot: true` in `NestFactory.create`; without it the module warns
   at startup and those tools return `snapshot_disabled` with the exact option to set.
-- The log capture sees what goes through Nest's `Logger`. A logger that writes on its own (for
-  example a request logger that bypasses Nest) is not captured.
+- The log capture sees what goes through Nest's `Logger`. A logger that writes on its own is not
+  captured: with `nestjs-pino`, what your code logs through `Logger` is in `logs_tail`, and the
+  request lines `pino-http` writes are not.
+- The tee is installed during `app.init()` (in `onModuleInit`). Lines written before that, including
+  the ones `bufferLogs: true` holds until `useLogger` flushes them, and the `onModuleInit` hooks of
+  modules Nest initialises before the inspector's, are not in the buffer. A `useLogger` after the app
+  started replaces the tee, and capture stops.
+- With Nest's default logger, every `Logger` prints through one shared `ConsoleLogger`; a per-instance
+  `new Logger(context, { timestamp: true })` loses its elapsed-time suffix.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

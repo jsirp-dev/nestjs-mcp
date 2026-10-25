@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { AddressInfo } from 'node:net';
 import { AppModule, FixtureAppOptions } from '../fixtures/app/app.module.js';
+import { MemoryLogger } from './memory-logger.js';
 
 export interface StartAppOptions extends FixtureAppOptions {
   /** `snapshot` for `NestFactory.create`. Defaults to `true`. */
@@ -15,7 +16,7 @@ export interface StartAppOptions extends FixtureAppOptions {
   /** Instances passed to `app.useGlobalGuards`. */
   globalGuards?: CanActivate[];
   versioning?: VersioningOptions;
-  /** Where Nest logs go. Defaults to a logger that records and prints nothing. */
+  /** Where Nest logs go. Defaults to a `RecordingLogger`, which records and prints nothing. */
   logger?: LoggerService;
 }
 
@@ -36,32 +37,46 @@ export interface LogEntry {
   context: string | undefined;
 }
 
-/** A `LoggerService` that keeps what Nest logs, so tests can assert on bootstrap warnings. */
-export class RecordingLogger implements LoggerService {
+/**
+ * The harness's default logger: a `MemoryLogger` (every call as it arrived) that also keeps each
+ * entry by level, message and context, so tests can assert on bootstrap warnings.
+ */
+export class RecordingLogger extends MemoryLogger {
   readonly entries: LogEntry[] = [];
-  log(message: unknown, context?: string) {
-    this.record('log', message, context);
+  override log(message: unknown, ...params: unknown[]) {
+    super.log(message, ...params);
+    this.record('log', message, params);
   }
-  error(message: unknown, _trace?: string, context?: string) {
-    this.record('error', message, context);
+  override error(message: unknown, ...params: unknown[]) {
+    super.error(message, ...params);
+    this.record('error', message, params);
   }
-  warn(message: unknown, context?: string) {
-    this.record('warn', message, context);
+  override warn(message: unknown, ...params: unknown[]) {
+    super.warn(message, ...params);
+    this.record('warn', message, params);
   }
-  debug(message: unknown, context?: string) {
-    this.record('debug', message, context);
+  override debug(message: unknown, ...params: unknown[]) {
+    super.debug(message, ...params);
+    this.record('debug', message, params);
   }
-  verbose(message: unknown, context?: string) {
-    this.record('verbose', message, context);
+  override verbose(message: unknown, ...params: unknown[]) {
+    super.verbose(message, ...params);
+    this.record('verbose', message, params);
   }
-  fatal(message: unknown, context?: string) {
-    this.record('fatal', message, context);
+  override fatal(message: unknown, ...params: unknown[]) {
+    super.fatal(message, ...params);
+    this.record('fatal', message, params);
   }
   from(context: string): LogEntry[] {
     return this.entries.filter((entry) => entry.context === context);
   }
-  private record(level: LogEntry['level'], message: unknown, context?: string) {
-    this.entries.push({ level, message: String(message), context });
+  private record(level: LogEntry['level'], message: unknown, params: unknown[]) {
+    const last = params[params.length - 1];
+    this.entries.push({
+      level,
+      message: String(message),
+      context: typeof last === 'string' ? last : undefined,
+    });
   }
 }
 

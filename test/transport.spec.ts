@@ -55,7 +55,7 @@ describe('inspector endpoint', () => {
       tools: {
         graph: true,
         routes: true,
-        logs: false,
+        logs: true,
         requests: false,
         events: false,
         schedule: false,

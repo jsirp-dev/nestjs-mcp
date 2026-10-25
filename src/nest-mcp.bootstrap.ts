@@ -1,7 +1,14 @@
-import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { AddressInfo } from 'node:net';
 import { LOGGER_CONTEXT, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
+import { installLogTee } from './logs/install-log-tee.js';
 import type { ResolvedNestMcpOptions } from './nest-mcp.options.js';
 import type { ToolContext } from './tools/tool-context.js';
 
@@ -22,9 +29,13 @@ function origin(address: AddressInfo | string | null): string | undefined {
   return `http://${host}:${address.port}`;
 }
 
-/** The bootstrap warnings, once per instance, through Nest's `Logger` (context `NestMcp`). */
+/**
+ * What each instance does while the app initialises: joins (or installs) the process-wide Logger
+ * tee at `onModuleInit`, then the bootstrap warnings, once per instance, through Nest's `Logger`
+ * (context `NestMcp`) at `onApplicationBootstrap`.
+ */
 @Injectable()
-export class NestMcpBootstrap implements OnApplicationBootstrap {
+export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap {
   private readonly logger = new Logger(LOGGER_CONTEXT);
 
   constructor(
@@ -32,6 +43,15 @@ export class NestMcpBootstrap implements OnApplicationBootstrap {
     @Inject(NEST_MCP_TOOL_CONTEXT) private readonly context: ToolContext,
     @Inject(HttpAdapterHost) private readonly adapterHost: HttpAdapterHost,
   ) {}
+
+  /**
+   * `useLogger` runs before `init`/`listen` in a normal bootstrap, so the active logger is final
+   * here; and every `onApplicationBootstrap` of the app, where apps log the most, comes after.
+   */
+  onModuleInit(): void {
+    if (!this.options.enabled || !this.options.tools.logs) return;
+    this.context.logTee = installLogTee(this.options.logs.bufferSize);
+  }
 
   onApplicationBootstrap(): void {
     if (!this.options.enabled) return;

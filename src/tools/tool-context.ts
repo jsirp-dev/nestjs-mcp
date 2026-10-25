@@ -3,6 +3,7 @@ import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js'
 import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
+import type { LogTee } from '../logs/log-tee.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
 import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 
@@ -24,6 +25,11 @@ export interface ToolContext {
   graph: GraphReader;
   /** Reads the routes Nest registered and the enhancers each runs, per call. */
   routes: RoutesReader;
+  /**
+   * The process-wide Logger tee this instance reads, set at `onModuleInit` of the instance when the
+   * `logs` group is on; `undefined` before that or with the group off.
+   */
+  logTee: LogTee | undefined;
   /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
@@ -50,6 +56,7 @@ export function createToolContext(
     serializedGraph,
     graph,
     routes: new RoutesReader(serializedGraph, graph, applicationConfig),
+    logTee: undefined,
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;

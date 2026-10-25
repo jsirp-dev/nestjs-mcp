@@ -17,7 +17,7 @@ still receives exactly what it did before.
 
 ## Prerequisites
 
-- [ ] Phase 3 closed.
+- [x] Phase 3 closed.
 
 ## Closed decisions for this phase
 
@@ -93,10 +93,10 @@ A second small app in the spec with `nestjs-pino` (test devDependency only) show
 
 ## Verification / definition of done
 
-- [ ] `logs.spec.ts` green; the original logger receives exactly what it did before the tee.
-- [ ] Two instances in one app do not duplicate entries.
-- [ ] With `nestjs-pino`, `Logger` output is captured and raw `pino-http` output is not, as documented.
-- [ ] `yarn build`, `lint`, `type-check` green.
+- [x] `logs.spec.ts` green; the original logger receives exactly what it did before the tee.
+- [x] Two instances in one app do not duplicate entries.
+- [x] With `nestjs-pino`, `Logger` output is captured and raw `pino-http` output is not, as documented.
+- [x] `yarn build`, `lint`, `type-check` green.
 
 ## Likely stumbles
 
