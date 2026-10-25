@@ -27,7 +27,7 @@ function newTrace(): ActiveTrace {
 /** Runs `fn` inside a fresh trace and answers what it returned and the steps recorded. */
 function traced<T>(fn: () => T): { result: T; steps: RequestTrace['steps'] } {
   const active = newTrace();
-  const result = runWithTrace(active, fn);
+  const result = runWithTrace(active, {}, fn);
   return { result, steps: active.trace.steps };
 }
 

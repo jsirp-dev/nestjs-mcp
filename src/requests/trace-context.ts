@@ -17,14 +17,48 @@ export const MAX_STEPS = 256;
 
 const storage = new AsyncLocalStorage<ActiveTrace>();
 
-/** The trace of the request running in this async context, if one is being traced. */
-export function current(): ActiveTrace | undefined {
-  return storage.getStore();
+/**
+ * Each trace by its request object, for when the async context loses it: a middleware that calls
+ * `next` from a stream callback (multer before 2.3, busboy) runs the rest of the request outside
+ * the context the trace middleware opened.
+ */
+const byRequest = new WeakMap<object, ActiveTrace>();
+
+/**
+ * The trace of the request running in this async context, if one is being traced; failing that,
+ * the trace of `request`, when given.
+ */
+export function current(request?: unknown): ActiveTrace | undefined {
+  const active = storage.getStore();
+  if (active || typeof request !== 'object' || request === null) return active;
+  return byRequest.get(request);
 }
 
-/** Runs `fn` with `active` as the current trace for everything it starts. */
-export function runWithTrace<T>(active: ActiveTrace, fn: () => T): T {
+/** Runs `fn` with `active` as the current trace for everything it starts, `request`'s from now. */
+export function runWithTrace<T>(active: ActiveTrace, request: object, fn: () => T): T {
+  byRequest.set(request, active);
   return storage.run(active, fn);
+}
+
+/**
+ * Runs `fn` with the trace of the request `host` carries (an `ExecutionContext` or
+ * `ArgumentsHost`), back in the async context when it had been lost, so whatever `fn` starts (the
+ * rest of Nest's chain, too) finds it with `current()`. `fn` gets `undefined` for an untraced
+ * request.
+ */
+export function withTrace<T>(host: unknown, fn: (active: ActiveTrace | undefined) => T): T {
+  const store = storage.getStore();
+  if (store) return fn(store);
+  const active = current(requestOf(host));
+  return active ? storage.run(active, () => fn(active)) : fn(undefined);
+}
+
+/** The HTTP request of an `ExecutionContext` or `ArgumentsHost`. Duck-typed. */
+function requestOf(host: unknown): unknown {
+  const ctx = host as ExecutionContextLike | undefined;
+  if (typeof ctx?.switchToHttp !== 'function') return undefined;
+  if (typeof ctx.getType === 'function' && ctx.getType() !== 'http') return undefined;
+  return ctx.switchToHttp().getRequest();
 }
 
 /** Milliseconds since the trace started, rounded to microseconds. */

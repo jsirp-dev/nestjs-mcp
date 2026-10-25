@@ -16,6 +16,7 @@ import {
   identify,
   record,
   round,
+  withTrace,
   type ActiveTrace,
 } from './trace-context.js';
 
@@ -135,122 +136,124 @@ function observe(
 
 function wrapGuard(original: AnyFunction, name: string): AnyFunction {
   return function canActivate(this: unknown, ...args: unknown[]) {
-    const active = current();
-    if (!active) return original.apply(this, args);
-    identify(active, args[0]);
-    const start = performance.now();
-    const settle = (outcome: TraceStepOutcome, error?: unknown) =>
-      record(
-        active,
-        timed(active, start, {
-          kind: 'guard',
-          name,
-          outcome,
-          ...(error === undefined ? {} : { error: describeError(error) }),
-        }),
+    return withTrace(args[0], (active) => {
+      if (!active) return original.apply(this, args);
+      identify(active, args[0]);
+      const start = performance.now();
+      const settle = (outcome: TraceStepOutcome, error?: unknown) =>
+        record(
+          active,
+          timed(active, start, {
+            kind: 'guard',
+            name,
+            outcome,
+            ...(error === undefined ? {} : { error: describeError(error) }),
+          }),
+        );
+      let result: unknown;
+      try {
+        result = original.apply(this, args);
+      } catch (error) {
+        settle('threw', error);
+        throw error;
+      }
+      return observe(
+        result,
+        (value) => settle(value ? 'allowed' : 'denied'),
+        (error) => settle('threw', error),
+        true,
       );
-    let result: unknown;
-    try {
-      result = original.apply(this, args);
-    } catch (error) {
-      settle('threw', error);
-      throw error;
-    }
-    return observe(
-      result,
-      (value) => settle(value ? 'allowed' : 'denied'),
-      (error) => settle('threw', error),
-      true,
-    );
+    });
   };
 }
 
 function wrapInterceptor(original: AnyFunction, name: string): AnyFunction {
   return function intercept(this: unknown, ...args: unknown[]) {
-    const active = current();
-    if (!active) return original.apply(this, args);
-    identify(active, args[0]);
-    const start = performance.now();
-    const enter = record(active, {
-      kind: 'interceptor',
-      name,
-      phase: 'enter',
-      outcome: 'ok',
-      startedAtMs: elapsed(active, start),
-      durationMs: 0,
-    });
-    const enterFailed = (error: unknown) => {
-      if (!enter) return;
-      enter.outcome = 'threw';
-      enter.error = describeError(error);
-      enter.durationMs = round(performance.now() - start);
-    };
-
-    // Knowing whether `next.handle()` was called tells a short-circuit from a pass-through.
-    let handled = false;
-    const next = args[1] as { handle?: (...handleArgs: unknown[]) => unknown } | undefined;
-    if (next && typeof next.handle === 'function') {
-      const handle = next.handle;
-      args[1] = Object.create(next, {
-        handle: {
-          value: (...handleArgs: unknown[]) => {
-            handled = true;
-            return handle.apply(next, handleArgs);
-          },
-          writable: true,
-          configurable: true,
-        },
+    return withTrace(args[0], (active) => {
+      if (!active) return original.apply(this, args);
+      identify(active, args[0]);
+      const start = performance.now();
+      const enter = record(active, {
+        kind: 'interceptor',
+        name,
+        phase: 'enter',
+        outcome: 'ok',
+        startedAtMs: elapsed(active, start),
+        durationMs: 0,
       });
-    }
+      const enterFailed = (error: unknown) => {
+        if (!enter) return;
+        enter.outcome = 'threw';
+        enter.error = describeError(error);
+        enter.durationMs = round(performance.now() - start);
+      };
 
-    let exited = false;
-    const exit = (outcome: TraceStepOutcome, error?: unknown) => {
-      if (exited) return;
-      exited = true;
-      record(
-        active,
-        timed(active, start, {
-          kind: 'interceptor',
-          name,
-          phase: 'exit',
-          ...(handled ? {} : { shortCircuited: true as const }),
-          outcome,
-          ...(error === undefined ? {} : { error: describeError(error) }),
-        }),
-      );
-    };
-    const watch = (observable: unknown) =>
-      isObservable(observable)
-        ? observable.pipe(
-            tap({
-              next: () => exit('ok'),
-              error: (error: unknown) => exit('threw', error),
-              complete: () => exit('ok'),
-            }),
-          )
-        : observable;
+      // Knowing whether `next.handle()` was called tells a short-circuit from a pass-through.
+      let handled = false;
+      const next = args[1] as { handle?: (...handleArgs: unknown[]) => unknown } | undefined;
+      if (next && typeof next.handle === 'function') {
+        const handle = next.handle;
+        args[1] = Object.create(next, {
+          handle: {
+            value: (...handleArgs: unknown[]) => {
+              handled = true;
+              return handle.apply(next, handleArgs);
+            },
+            writable: true,
+            configurable: true,
+          },
+        });
+      }
 
-    let result: unknown;
-    try {
-      result = original.apply(this, args);
-    } catch (error) {
-      enterFailed(error);
-      throw error;
-    }
-    if (isThenable(result)) {
-      return result.then(
-        (observable) => {
-          if (enter) enter.durationMs = round(performance.now() - start);
-          return watch(observable);
-        },
-        (error: unknown) => {
-          enterFailed(error);
-          throw error;
-        },
-      );
-    }
-    if (enter) enter.durationMs = round(performance.now() - start);
-    return watch(result);
+      let exited = false;
+      const exit = (outcome: TraceStepOutcome, error?: unknown) => {
+        if (exited) return;
+        exited = true;
+        record(
+          active,
+          timed(active, start, {
+            kind: 'interceptor',
+            name,
+            phase: 'exit',
+            ...(handled ? {} : { shortCircuited: true as const }),
+            outcome,
+            ...(error === undefined ? {} : { error: describeError(error) }),
+          }),
+        );
+      };
+      const watch = (observable: unknown) =>
+        isObservable(observable)
+          ? observable.pipe(
+              tap({
+                next: () => exit('ok'),
+                error: (error: unknown) => exit('threw', error),
+                complete: () => exit('ok'),
+              }),
+            )
+          : observable;
+
+      let result: unknown;
+      try {
+        result = original.apply(this, args);
+      } catch (error) {
+        enterFailed(error);
+        throw error;
+      }
+      if (isThenable(result)) {
+        return result.then(
+          (observable) => {
+            if (enter) enter.durationMs = round(performance.now() - start);
+            return watch(observable);
+          },
+          (error: unknown) => {
+            enterFailed(error);
+            throw error;
+          },
+        );
+      }
+      if (enter) enter.durationMs = round(performance.now() - start);
+      return watch(result);
+    });
   };
 }
 
@@ -307,27 +310,28 @@ function wrapPipe(original: AnyFunction, name: string): AnyFunction {
 
 function wrapFilter(original: AnyFunction, name: string): AnyFunction {
   return function catchException(this: unknown, ...args: unknown[]) {
-    const active = current();
-    if (!active) return original.apply(this, args);
-    const start = performance.now();
-    const settle = (outcome: TraceStepOutcome, error: unknown) =>
-      record(
-        active,
-        timed(active, start, { kind: 'filter', name, outcome, error: describeError(error) }),
+    return withTrace(args[1], (active) => {
+      if (!active) return original.apply(this, args);
+      const start = performance.now();
+      const settle = (outcome: TraceStepOutcome, error: unknown) =>
+        record(
+          active,
+          timed(active, start, { kind: 'filter', name, outcome, error: describeError(error) }),
+        );
+      let result: unknown;
+      try {
+        result = original.apply(this, args);
+      } catch (error) {
+        settle('threw', error);
+        throw error;
+      }
+      return observe(
+        result,
+        () => settle('caught', args[0]),
+        (error) => settle('threw', error),
+        false,
       );
-    let result: unknown;
-    try {
-      result = original.apply(this, args);
-    } catch (error) {
-      settle('threw', error);
-      throw error;
-    }
-    return observe(
-      result,
-      () => settle('caught', args[0]),
-      (error) => settle('threw', error),
-      false,
-    );
+    });
   };
 }
 

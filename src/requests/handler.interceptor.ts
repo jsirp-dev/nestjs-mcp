@@ -3,11 +3,11 @@ import { tap, type Observable } from 'rxjs';
 import type { TraceStep } from './model.js';
 import {
   MAX_STEPS,
-  current,
   describeError,
   elapsed,
   identify,
   round,
+  withTrace,
   type ActiveTrace,
 } from './trace-context.js';
 
@@ -77,8 +77,17 @@ export class NestMcpHandlerInterceptor {
   readonly [INSPECTOR_INTERCEPTOR] = true;
 
   intercept(context: unknown, next: CallHandlerLike): Observable<unknown> {
-    const active = current();
-    if (!active) return next.handle();
+    return withTrace(context, (active) =>
+      active ? this.traced(active, context, next) : next.handle(),
+    );
+  }
+
+  /** Called inside the trace's async context: Nest binds the rest of the chain to it. */
+  private traced(
+    active: ActiveTrace,
+    context: unknown,
+    next: CallHandlerLike,
+  ): Observable<unknown> {
     identify(active, context);
     const from = active.trace.steps.length;
     const start = performance.now();

@@ -13,6 +13,56 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Traces survive a middleware that loses the async context (ticket #18, 2026-10-25)
+
+#### Done
+
+- A request whose async context a middleware lost after the trace middleware opened it keeps its
+  steps, `controller`, `handler`, `route` and `module`. Before, a multipart request through multer
+  in a feature module had `steps: []` and no identity.
+- The trace middleware also keeps each trace by its request object (a `WeakMap`). When
+  `AsyncLocalStorage` has no store, the guard, interceptor and filter wrappers and the handler
+  interceptor find the trace through the request of their `ExecutionContext`/`ArgumentsHost`, and
+  run the call back inside the trace's context (`withTrace`). Nest binds `next.handle()` to the
+  context it is called in, so later interceptors, pipes and the handler find it with `current()`.
+- `current(request?)` in `src/requests/trace-context.ts` is the one lookup: the async context
+  first, then the trace of the request, when given.
+- README: how a lost context is recovered.
+
+#### Hot decisions
+
+- **Cause confirmed, with a nuance:** multer up to 2.2.0 calls `next` from busboy's stream callbacks,
+  where `AsyncLocalStorage.getStore()` is `undefined` (a probe store opened in the middleware is gone
+  in the callback). multer 2.3.0 and later wrap `next` in an `AsyncResource` themselves, so the
+  issue's repro passes with the multer `@nestjs/platform-express` 11.2.8 brings (2.4.0) and fails
+  with 2.0.2. With multer in the root module the trace was complete because that middleware ran
+  before the trace middleware opened the context, so nothing was lost after it.
+- **Binding `next` in the trace middleware does not help:** it calls `next` synchronously, inside
+  its context; the context is lost later, inside another middleware's callback, whose `next` the
+  inspector does not hold. The fix is the `WeakMap` fallback plus re-entering the context in the
+  first enhancer that has the request.
+- **Test dependency:** `multer@2.2.0` pinned as a devDependency (with `@types/multer`), the last
+  release that loses the context, so the fixture reproduces the bug on Nest 10 and 11 alike. Never
+  a runtime dependency.
+
+#### Notes for the next session
+
+- For #27: `current()` without arguments finds the trace in guards, interceptors, pipes, the handler
+  and filters, which now run inside the context again. Code that runs between the middleware that
+  lost the context and the first guard (other middlewares) still has none; with the request at
+  hand, `current(request)` finds it.
+
+#### Verification
+
+New fixture `UploadFeatureModule` → `UploadModule` (opt-in, `upload: true`): multer in a class
+middleware declared two levels below the root, a guard, an interceptor, a body pipe and a filter.
+`test/multipart.spec.ts`: the multipart trace has the same steps and identity as the JSON one (red
+without the fix: `steps: []`), the filter of a multipart request is recorded, and neither fields
+nor files reach the trace. The issue's JS repro with multer 2.0.2 gives `guard:OkGuard:allowed`,
+`handler:C.form:ok`, `module: CatsModule` in both layouts. `yarn format-check`, `yarn lint`,
+`yarn type-check`, `yarn build`, `yarn test` (18 suites / 229 tests) green on Nest 11.2.8 and on
+Nest 10.4.22 (scratch copy).
+
 ### Unnamed parameter pipes keep their level in traces (ticket #20, 2026-10-25)
 
 #### Done

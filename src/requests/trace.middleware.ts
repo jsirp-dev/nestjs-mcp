@@ -30,7 +30,7 @@ export interface TracingApplicationConfigLike {
 export function createTraceMiddleware(recorder: TraceRecorder) {
   class NestMcpTraceMiddleware {
     use(request: IncomingRequestLike, response: OutgoingResponseLike, next: () => void): void {
-      runWithTrace(recorder.start(request, response), next);
+      runWithTrace(recorder.start(request, response), request, next);
     }
   }
   // Pinned: a bundler may rename a nested class.

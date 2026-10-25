@@ -479,7 +479,9 @@ and `app_info.tools.schedule` is `false`.
   instances Nest built (global, per controller and per route) before Nest builds the routes. Each
   wrapper records a step into the current request's trace, held in an `AsyncLocalStorage` that a
   middleware opens, and returns exactly what the original returned, with the same `this` and the
-  same exceptions. It also adds one global interceptor of its own, which names the handler. With the
+  same exceptions. When a middleware after it loses that async context (one that calls `next` from
+  a stream callback, as multer before 2.3 does), guards, interceptors and filters find the trace by
+  the request object and run the rest of the request back inside it. It also adds one global interceptor of its own, which names the handler. With the
   group off, nothing is wrapped and neither is installed.
 - **Emissions by wrapping the emitter.** With the `events` group on and the app's `EventEmitter2` in
   the container, `emit` and `emitAsync` are replaced on that instance, once, by functions that record
