@@ -11,7 +11,7 @@ import { describeScope, inScope, type InstanceScope } from '../instance/scope.js
 import { ToolError, type ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
 
-const SNAPSHOT_HINT = 'Pass { snapshot: true } to NestFactory.create';
+export const SNAPSHOT_HINT = 'Pass { snapshot: true } to NestFactory.create';
 const MAX_CANDIDATES = 5;
 
 export interface GraphModuleSummary {
@@ -74,7 +74,7 @@ function distance(a: string, b: string): number {
 }
 
 /** Up to five names close to `wanted`: substrings first, then by edit distance. */
-function similar(wanted: string, names: Iterable<string>): string[] {
+export function similar(wanted: string, names: Iterable<string>): string[] {
   const needle = wanted.toLowerCase();
   const limit = Math.max(3, Math.ceil(wanted.length / 2));
   return [...new Set(names)]

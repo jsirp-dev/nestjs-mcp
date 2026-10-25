@@ -17,8 +17,8 @@ At the end: `route_get({ method: 'GET', path: '/api/cats/:id' })` on the fixture
 
 ## Prerequisites
 
-- [ ] Phase 2 closed.
-- [ ] `GraphModel` keeps `enhancers` per class (phase 2 note).
+- [x] Phase 2 closed.
+- [x] `GraphModel` keeps `enhancers` per class (phase 2 note).
 
 ## Closed decisions for this phase
 
@@ -91,11 +91,11 @@ with the level table and the note on filter order.
 
 ## Verification / definition of done
 
-- [ ] `routes.spec.ts` green in both modes (with and without versioning).
-- [ ] An instance global guard and an `APP_GUARD` one both appear with `level: 'global'`.
-- [ ] `routes_list({ filter: 'cats' })` does not return `/api/_mcp`; without filter it does.
-- [ ] The `forFeature` instance does not list routes outside its scope.
-- [ ] `yarn build`, `lint`, `type-check` green.
+- [x] `routes.spec.ts` green in both modes (with and without versioning).
+- [x] An instance global guard and an `APP_GUARD` one both appear with `level: 'global'`.
+- [x] `routes_list({ filter: 'cats' })` does not return `/api/_mcp`; without filter it does.
+- [x] The `forFeature` instance does not list routes outside its scope.
+- [x] `yarn build`, `lint`, `type-check` green.
 
 ## Likely stumbles
 

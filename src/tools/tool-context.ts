@@ -1,5 +1,7 @@
 import type { VersioningOptions } from '@nestjs/common';
 import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js';
+import type { ExcludedRoute } from '../routes/full-path.js';
+import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
 import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js';
@@ -8,6 +10,8 @@ import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js
 export interface ApplicationConfigLike {
   getGlobalPrefix(): string;
   getVersioning(): VersioningOptions | undefined;
+  /** `exclude` lists the routes left out of the global prefix. */
+  getGlobalPrefixOptions?(): { exclude?: ExcludedRoute[] };
 }
 
 /** Everything a tool group needs to answer within its instance. */
@@ -18,6 +22,8 @@ export interface ToolContext {
   serializedGraph: SerializedGraphLike | undefined;
   /** Reads the serialized graph into the package's model, per call. */
   graph: GraphReader;
+  /** Reads the routes Nest registered and the enhancers each runs, per call. */
+  routes: RoutesReader;
   /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
@@ -43,6 +49,7 @@ export function createToolContext(
     applicationConfig,
     serializedGraph,
     graph,
+    routes: new RoutesReader(serializedGraph, graph, applicationConfig),
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;

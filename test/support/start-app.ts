@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { INestApplication, LoggerService, VersioningOptions } from '@nestjs/common';
+import { CanActivate, INestApplication, LoggerService, VersioningOptions } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -10,6 +10,10 @@ export interface StartAppOptions extends FixtureAppOptions {
   /** `snapshot` for `NestFactory.create`. Defaults to `true`. */
   snapshot?: boolean;
   globalPrefix?: string;
+  /** Options of `setGlobalPrefix`, such as `exclude`. */
+  globalPrefixOptions?: Parameters<INestApplication['setGlobalPrefix']>[1];
+  /** Instances passed to `app.useGlobalGuards`. */
+  globalGuards?: CanActivate[];
   versioning?: VersioningOptions;
   /** Where Nest logs go. Defaults to a logger that records and prints nothing. */
   logger?: LoggerService;
@@ -68,7 +72,8 @@ export async function startApp(options: StartAppOptions = {}): Promise<RunningAp
     logger: options.logger ?? new RecordingLogger(),
     abortOnError: false,
   });
-  if (options.globalPrefix) app.setGlobalPrefix(options.globalPrefix);
+  if (options.globalPrefix) app.setGlobalPrefix(options.globalPrefix, options.globalPrefixOptions);
+  if (options.globalGuards) app.useGlobalGuards(...options.globalGuards);
   if (options.versioning) app.enableVersioning(options.versioning);
   await app.listen(0, '127.0.0.1');
 

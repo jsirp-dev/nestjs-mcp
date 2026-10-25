@@ -128,7 +128,7 @@ dependencies must come from a global module or, in the async variants, from `imp
 |-------|-------|--------|
 | `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
-| `routes` | `routes_list`, `route_get` (each route with its guards, interceptors, pipes and filters, global → controller → method) | planned |
+| `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | planned |
 | `requests` | `requests_list`, `request_trace` | planned |
 | `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | planned |
@@ -160,6 +160,39 @@ only the modules in its closure, and the providers, dependencies and cycles amon
   `@UseGuards` and friends are not dependencies; the `routes` tools report them.
 - An unknown name answers `not_found` with up to five similar `candidates`; a token declared in several
   modules answers `ambiguous` with each `{ token, module }`, and `module` picks one.
+
+### Routes and enhancers
+
+Every HTTP route Nest registered whose controller is in the instance's scope, the inspector's own
+endpoint included (a `forFeature` instance does not list it). Routes that an RPC layer implements as
+controller handlers are ordinary routes; one served by a middleware of its own is not a route here.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `routes_list` | `filter?`, `method?`, `controller?`, `module?` | One entry per route: `method`, `path`, `Controller.handler`, and how many guards, interceptors, pipes and filters run on it |
+| `route_get` | `method`, `path` | The route: `path`, `rawPath`, `version`, `controller`, `handler`, `module`, `guards`, `interceptors`, `pipes`, `filters`, `middlewares` |
+
+- `path` is what the app serves, as Nest computed it: global prefix (unless the route is in its
+  `exclude` list) and the URI version. `rawPath` is the controller and method paths alone, the one
+  to use with header or media-type versioning. `route_get` takes either; a raw path shared by several
+  versions answers `ambiguous` with the full paths.
+- `version` is the handler's version, or the controller's, or `defaultVersion`; `VERSION_NEUTRAL` is
+  `'neutral'`. Without versioning there is none.
+- Each enhancer is `{ name, level }`, a class name and never an instance. Each list is in the order
+  Nest runs it:
+
+  | Level | Comes from |
+  |-------|------------|
+  | `global` | `app.useGlobalGuards(...)` and friends, and `APP_GUARD` / `APP_INTERCEPTOR` / `APP_PIPE` / `APP_FILTER` providers, in the order Nest registered them |
+  | `controller` | `@UseGuards`, `@UseInterceptors`, `@UsePipes`, `@UseFilters` on the controller class |
+  | `method` | The same decorators on the handler; then parameter pipes, which carry `param` (`'id'` for `@Param('id', ParseIntPipe)`, `#n` for an argument without a name) |
+
+- **Filters are listed in the same order but resolved the other way round**: Nest tries the
+  method's filters first, then the controller's, then the globals, and the first whose `@Catch`
+  matches handles the exception.
+- `middlewares` are the classes whose `forRoutes` path and method match the route's raw path.
+  Plain paths match exactly; wildcards match by the prefix before them, and `exclude(...)` is not
+  read, so the list is approximate (`route_get` says so in `middlewaresMatch`).
 
 ## How it works
 

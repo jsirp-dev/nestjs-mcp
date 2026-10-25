@@ -1,6 +1,9 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { NestMcpModule } from '@jsirp/nestjs-mcp';
 import { CatsModule } from './cats/cats.module.js';
+import { AppGuard } from './global.guards.js';
+import { TraceModule } from './trace.middleware.js';
 
 type RootInspector =
   | { kind: 'none' }
@@ -12,6 +15,10 @@ export interface FixtureAppOptions {
   root?: RootInspector;
   /** Mount a `forFeature` instance inside `CatsModule`. */
   catsInspector?: boolean;
+  /** Provide `AppGuard` as an `APP_GUARD`. */
+  appGuard?: boolean;
+  /** Apply `TraceMiddleware` to the cats routes. */
+  middleware?: boolean;
 }
 
 @Module({})
@@ -26,7 +33,12 @@ export class AppModule {
           : [];
     return {
       module: AppModule,
-      imports: [CatsModule.with({ inspector: options.catsInspector }), ...inspector],
+      imports: [
+        CatsModule.with({ inspector: options.catsInspector }),
+        ...inspector,
+        ...(options.middleware ? [TraceModule] : []),
+      ],
+      providers: options.appGuard ? [{ provide: APP_GUARD, useClass: AppGuard }] : [],
     };
   }
 }
