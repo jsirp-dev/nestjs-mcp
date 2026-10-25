@@ -168,6 +168,28 @@ function isExternal(file: string): boolean {
   return file.startsWith('node:') || /[\\/]node_modules[\\/]/.test(file) || !/[\\/]/.test(file);
 }
 
+/**
+ * The frame at a position V8 ran (`line` and `column` 1-based), mapped to the original source when
+ * a map is found, flagged `external` like a stack's frames.
+ */
+export function frameAt(
+  name: string,
+  file: string,
+  line: number,
+  column: number,
+  maps: SourceMaps,
+): StackFrame {
+  const frame: StackFrame = {
+    function: name,
+    file,
+    line,
+    column,
+    mapped: !JAVASCRIPT.test(file) && !file.startsWith('node:'),
+  };
+  if (isExternal(file)) frame.external = true;
+  return mapFrame(frame, maps);
+}
+
 function mapFrame(frame: StackFrame, maps: SourceMaps): StackFrame {
   if (frame.external || frame.mapped || frame.line === undefined || frame.column === undefined) {
     return frame;

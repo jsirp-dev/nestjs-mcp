@@ -13,6 +13,7 @@ export type {
   NestMcpFeatureAsyncOptions,
   NestMcpFeatureOptions,
   NestMcpListenOptions,
+  NestMcpLocalsOptions,
   NestMcpLogsOptions,
   NestMcpOptions,
   NestMcpStaticOptions,
@@ -21,7 +22,8 @@ export type {
   ToolGroup,
 } from './nest-mcp.options.js';
 export type { AppInfo, AppInfoVersion, AppInfoVersioning } from './tools/app.tools.js';
-export type { DebugStatus } from './debug/debug.js';
+export type { DebugStatus, FrameLocals } from './debug/debug.js';
+export type { LocalObject, LocalScopes, LocalValue } from './debug/locals-preview.js';
 export type { StackFrame } from './debug/stack-frames.js';
 export type {
   RequestTrace,

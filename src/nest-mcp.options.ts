@@ -7,6 +7,7 @@ import {
   DEFAULT_LOGS_BUFFER_SIZE,
   DEFAULT_REQUESTS_BUFFER_SIZE,
   DEFAULT_RUNS_BUFFER_SIZE,
+  DEFAULT_LOCALS,
   MAX_STACK_FRAMES,
 } from './constants.js';
 import { isLogSink, type LogSink } from './logs/log-sink.js';
@@ -64,6 +65,27 @@ export interface NestMcpLogsOptions {
 export interface NestMcpDebugOptions {
   /** Frames kept per error, from the top. Default and maximum `30`. */
   stackFrames?: number;
+  /**
+   * The values of local variables at the throw, read by a worker thread's inspector session
+   * (ADR-0005). On by default with `debug`; `false` keeps the stacks without them.
+   */
+  locals?: boolean | NestMcpLocalsOptions;
+}
+
+/** The bounds of `debug.locals`; every field optional. */
+export interface NestMcpLocalsOptions {
+  /** Top frames whose scopes are read. Default `5`. */
+  frames?: number;
+  /** Levels of objects expanded below each variable. Default `2`. */
+  depth?: number;
+  /** Properties per object, items per array and variables per scope. Default `20`. */
+  properties?: number;
+  /** Characters kept per string. Default `200`. */
+  stringLength?: number;
+  /** Bytes of JSON per error, all frames together. Default `16384`. */
+  bytes?: number;
+  /** Captures per minute; beyond it an error says `localsSkipped: 'rate'`. Default `10`. */
+  perMinute?: number;
 }
 
 /** Access control over the raw request on the listener; `false` (or a throw) answers 403. */
@@ -96,8 +118,9 @@ export interface NestMcpOptions {
   runs?: { bufferSize?: number };
   /**
    * Debugging data in traces and runs: each error a step or a run records carries its stack,
-   * mapped to the original source when a source map is found. Off by default, whatever `enabled`
-   * is. Process-wide: the first instance decides, so give every instance the same value.
+   * mapped to the original source when a source map is found, and the locals of the frames that
+   * threw (ADR-0005). Off by default, whatever `enabled` is. Process-wide: the first instance
+   * decides, so give every instance the same value.
    */
   debug?: boolean | NestMcpDebugOptions;
   /** What the server reports in `initialize`. Default: the app's `package.json`. */
@@ -145,6 +168,17 @@ export interface ResolvedNestMcpOptions {
 export interface ResolvedDebugOptions {
   enabled: boolean;
   stackFrames: number;
+  locals: ResolvedLocalsOptions;
+}
+
+export interface ResolvedLocalsOptions {
+  enabled: boolean;
+  frames: number;
+  depth: number;
+  properties: number;
+  stringLength: number;
+  bytes: number;
+  perMinute: number;
 }
 
 /** The default of `enabled`: the only `process.env` the package reads. */
@@ -233,11 +267,12 @@ function resolveLogs(logs: NestMcpLogsOptions | undefined): ResolvedNestMcpOptio
 
 function resolveDebug(debug: NestMcpOptions['debug']): ResolvedDebugOptions {
   if (debug === undefined || typeof debug === 'boolean') {
-    return { enabled: debug === true, stackFrames: MAX_STACK_FRAMES };
+    const enabled = debug === true;
+    return { enabled, stackFrames: MAX_STACK_FRAMES, locals: resolveLocals(enabled) };
   }
   if (typeof debug !== 'object' || debug === null) {
     throw new Error(
-      `NestMcpModule: \`debug\` must be a boolean or \`{ stackFrames? }\`, got ${String(debug)}.`,
+      `NestMcpModule: \`debug\` must be a boolean or \`{ stackFrames?, locals? }\`, got ${String(debug)}.`,
     );
   }
   const stackFrames = positiveInteger(debug.stackFrames, MAX_STACK_FRAMES, 'debug.stackFrames');
@@ -246,7 +281,27 @@ function resolveDebug(debug: NestMcpOptions['debug']): ResolvedDebugOptions {
       `NestMcpModule: \`debug.stackFrames\` must be at most ${MAX_STACK_FRAMES}, got ${stackFrames}.`,
     );
   }
-  return { enabled: true, stackFrames };
+  return { enabled: true, stackFrames, locals: resolveLocals(debug.locals ?? true) };
+}
+
+function resolveLocals(locals: boolean | NestMcpLocalsOptions): ResolvedLocalsOptions {
+  if (typeof locals !== 'boolean' && (typeof locals !== 'object' || locals === null)) {
+    throw new Error(
+      `NestMcpModule: \`debug.locals\` must be a boolean or an object of bounds, got ${String(locals)}.`,
+    );
+  }
+  const bounds = typeof locals === 'object' ? locals : {};
+  const bound = (name: keyof NestMcpLocalsOptions, fallback: number) =>
+    positiveInteger(bounds[name], fallback, `debug.locals.${name}`);
+  return {
+    enabled: locals !== false,
+    frames: bound('frames', DEFAULT_LOCALS.frames),
+    depth: bound('depth', DEFAULT_LOCALS.depth),
+    properties: bound('properties', DEFAULT_LOCALS.properties),
+    stringLength: bound('stringLength', DEFAULT_LOCALS.stringLength),
+    bytes: bound('bytes', DEFAULT_LOCALS.bytes),
+    perMinute: bound('perMinute', DEFAULT_LOCALS.perMinute),
+  };
 }
 
 /** Every default applied, `path` normalised and the values checked. */

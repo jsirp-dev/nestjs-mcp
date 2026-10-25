@@ -127,8 +127,21 @@ describe('debug option', () => {
       enabled: true,
       stackFrames: 30,
       sourceMaps: { process: false, files: expect.any(Number) },
+      locals: { state: 'ready', captured: 0, skippedRate: 0 },
     });
-    expect(info.options.debug).toEqual({ enabled: true, stackFrames: 30 });
+    expect(info.options.debug).toEqual({
+      enabled: true,
+      stackFrames: 30,
+      locals: {
+        enabled: true,
+        frames: 5,
+        depth: 2,
+        properties: 20,
+        stringLength: 200,
+        bytes: 16384,
+        perMinute: 10,
+      },
+    });
   });
 
   it('is process-wide: one instance decides for every instance of the app', async () => {
@@ -157,7 +170,14 @@ describe('debug option', () => {
   });
 
   it('rejects a debug option of the wrong shape', async () => {
-    for (const debug of ['yes', { stackFrames: 0 }, { stackFrames: 31 }]) {
+    for (const debug of [
+      'yes',
+      { stackFrames: 0 },
+      { stackFrames: 31 },
+      { locals: 'all' },
+      { locals: { frames: 0 } },
+      { locals: { bytes: 1.5 } },
+    ]) {
       const started = startApp({ root: { kind: 'sync', options: { debug } as never } }).then(
         (app) => app.close(),
       );

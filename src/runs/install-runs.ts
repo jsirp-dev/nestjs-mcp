@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { enterInFlight, leaveInFlight } from '../debug/locals-capture.js';
 import { eventText, type EmitterLike } from '../events/emit-recorder.js';
 import { findEmitter, matcher } from '../events/install-events.js';
 import {
@@ -200,7 +201,9 @@ export function installRuns(
         if (trace) run.requestId = trace.trace.id;
         buffer.push({ run, module });
         const t0 = performance.now();
+        enterInFlight();
         const finish = (threw: boolean, error?: unknown) => {
+          leaveInFlight();
           run.durationMs = round(performance.now() - t0);
           run.outcome = threw ? 'threw' : 'ok';
           if (threw) run.error = describeError(error);

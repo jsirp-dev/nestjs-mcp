@@ -1,3 +1,4 @@
+import type { FrameLocals } from '../debug/debug.js';
 import type { StackFrame } from '../debug/stack-frames.js';
 
 /** What a step is: an enhancer kind, or the handler itself. */
@@ -17,6 +18,15 @@ export interface TraceError {
    * frames. Absent with `debug` off, or when the exception is not an `Error` with a stack.
    */
   stack?: StackFrame[];
+  /**
+   * With `debug.locals`: the variables of the top frames at the throw, aligned with `stack`
+   * (`locals[i]` is the frame `stack[i]` names, as a rule). Absent when nothing was captured.
+   */
+  locals?: FrameLocals[];
+  /** The byte budget ran out before every frame was read. */
+  localsTruncated?: true;
+  /** Why an exception that could have had locals has none. */
+  localsSkipped?: 'rate' | 'ambiguous';
 }
 
 /** One recorded unit inside a trace. */

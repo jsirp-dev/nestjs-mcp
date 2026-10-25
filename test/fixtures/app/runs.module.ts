@@ -15,8 +15,9 @@ export class JobsService {
   /** Never due within a test: the tests fire it through the registry. */
   @Cron('0 5 1 1 *', { name: 'purge' })
   purge(): void {
+    const batch = 3;
     this.logger.log('purging');
-    throw new Error('purge failed');
+    if (batch > 0) throw new Error('purge failed');
   }
 
   @Timeout('warm', 10)

@@ -130,10 +130,11 @@ All optional, except `path` in `forFeature`.
 | `logs.normalize` | none | `(record) => entry \| undefined`: maps the sink's records of a format the built-in mapping does not read. |
 | `requests.bufferSize` | `500` | How many request traces are kept. |
 | `requests.idHeader` | `'x-nest-mcp-request-id'` | The correlation header an agent sets to find a request's trace. Read, never echoed back. |
-| `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never. |
+| `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never, except what a handler holds in a variable when it throws, with [`debug`](#locals-at-the-throw). |
 | `runs.bufferSize` | `500` | How many job and listener runs are kept. One buffer per app: the first instance that installs it sets the size. |
-| `debug` | `false` | `true` or `{ stackFrames? }`: each error a trace step or a run records carries its `stack`, as frames mapped to your source. Off by default, whatever `enabled` is. Process-wide: the first instance decides, so give every instance the same value. See [Debug: stacks of failing steps](#debug-stacks-of-failing-steps). |
+| `debug` | `false` | `true` or `{ stackFrames?, locals? }`: each error a trace step or a run records carries its `stack`, as frames mapped to your source, and the `locals` of the frames that threw. Off by default, whatever `enabled` is. Process-wide: the first instance decides, so give every instance the same value. See [Debug: stacks of failing steps](#debug-stacks-of-failing-steps). |
 | `debug.stackFrames` | `30` | Frames kept per error, from the throw outwards; at most `30`. |
+| `debug.locals` | `true` (with `debug`) | The values of local variables at the throw, read by a worker thread's inspector session ([ADR-0005](docs/adr/0005-local-variables-read-under-debug.md)). `false` keeps the stacks without them, and no worker starts. An object sets its bounds: `{ frames: 5, depth: 2, properties: 20, stringLength: 200, bytes: 16384, perMinute: 10 }` (the defaults). See [Locals at the throw](#locals-at-the-throw). |
 | `serverInfo` | your app's `package.json` | `{ name, version }` the server reports in the MCP `initialize` handshake. |
 
 `authorize` is a plain function, not a Nest guard: there is no `ExecutionContext`. Close over what
@@ -154,7 +155,7 @@ NestMcpModule.forRootAsync({
 
 | Group | Tools | Status |
 |-------|-------|--------|
-| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path and URL (`mcpPath`, `mcpUrl`), instance scope, whether `snapshot` is on, which groups are live, `debug` (whether it is on and how stacks are mapped), and the instance's tool switches, `requests.headers` policy and `debug` | ✅ |
+| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path and URL (`mcpPath`, `mcpUrl`), instance scope, whether `snapshot` is on, which groups are live, `debug` (whether it is on, how stacks are mapped and the state of the locals worker), and the instance's tool switches, `requests.headers` policy and `debug` | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
@@ -467,12 +468,77 @@ from the throw outwards, at most `debug.stackFrames` (30).
   (`process`) and how many compiled files' own maps the inspector has read (`files`).
 - **`external: true`** flags frames in `node_modules`, `node:` internals and frames without a file
   (`<anonymous>`, `native`), so an agent can skip to your code. They are kept, unmapped.
-- **Only positions are stored**: function name, file, line, column. No source text (a map's
-  `sourcesContent` is dropped when it is read), no variables, no arguments.
-- **Off, nothing changes**: errors are `{ name, message }` as before, and no stack is read.
+- **`stack` holds positions only**: function name, file, line, column. No source text (a map's
+  `sourcesContent` is dropped when it is read). The values in scope are in `locals`, below.
+- **Off, nothing changes**: errors are `{ name, message }` as before, no stack is read and no
+  worker or inspector session exists.
 - The stack is read when the error is recorded, from `error.stack`, as any logger would read it; a
   compiled file's map is read once and kept. How many frames there are is V8's
   `Error.stackTraceLimit` (10 unless your process raises it); the inspector does not change it.
+
+#### Locals at the throw
+
+With `debug` on (and `debug.locals` not `false`), the error of the step that threw, and of a failing
+run, also carries `locals`: the variables in scope in the top frames at the moment of the throw,
+aligned with `stack` (`locals[0]` is the frame `stack[0]` names when the error was created where it
+was thrown, as usual).
+
+```json
+"error": {
+  "name": "Error",
+  "message": "failed with 42",
+  "stack": [{ "function": "OrdersController.total", "file": "/app/src/orders.controller.ts", "line": 18, "column": 11, "mapped": true }, "…"],
+  "locals": [
+    {
+      "function": "OrdersController.total",
+      "file": "/app/src/orders.controller.ts",
+      "line": 18,
+      "scopes": {
+        "local": { "total": 42, "order": { "[[Class]]": "Order", "id": 7, "lines": "[Array(2)]" }, "note": "nnnn…[500 chars]" },
+        "closure": { "TAX": 0.21 }
+      }
+    },
+    { "function": "<anonymous>", "file": "/app/node_modules/@nestjs/core/router/router-execution-context.js", "line": 38, "external": true }
+  ]
+}
+```
+
+- **What is read**: the `local` scopes (block and `catch` scopes merged in) and `closure` scopes of
+  the top `debug.locals.frames` frames; never module, script or global scopes. Frames outside your
+  code (`node_modules`, `node:`) are listed with `external: true` and not read.
+- **How values look**: strings, numbers, booleans and `null` as they are; plain objects and arrays
+  `depth` levels deep, then `[Object]`, `[Array(3)]` or the class name; class instances with
+  `"[[Class]]"`; `undefined`, `NaN`, `42n`, symbols as bracketed strings; functions by name
+  (`[Function: find]`), never their source; a `Map`, `Set`, `Date`, `Promise` or proxy by its
+  description, never entered. Only own enumerable data properties are read: a getter shows as
+  `[Getter]` and **is never called**. Nothing in your app is evaluated.
+- **Bounds**: `properties` per object (and variables per scope, and items per array), with
+  `"…": "[N more]"`; strings cut at `stringLength` with their length; at most `bytes` of JSON per
+  error, after which reading stops and the error says `localsTruncated: true`; at most `perMinute`
+  captures, after which the error says `localsSkipped: 'rate'` and nothing is read.
+- **Which exceptions**: those your own code throws while a traced request or a run is in flight.
+  Exceptions thrown with nothing in flight (startup, a timer of yours) are never read, nor those
+  thrown inside `node_modules` (a pipe's `BadRequestException`), nor your code rethrowing from a
+  `catch` block the error it caught (the first throw keeps its locals). Exceptions your code throws
+  and catches itself during a request are read too, and count against the rate.
+- **One step, not all of them**: in `request_trace` the locals go on the first step that recorded the
+  exception, the one that threw; the interceptors it passed through and the filter that caught it
+  carry its `stack` (and `localsSkipped`, when there is one) without them.
+- **When none are given**: two exceptions with the same stack text pending at once (the same code
+  failing in two concurrent requests) are not told apart: the error says `localsSkipped:
+  'ambiguous'` rather than show another request's values. An exception whose `stack` your code
+  replaced after the throw, or that is not an `Error`, gets none.
+- **What it costs**: the main thread stops at every exception while the worker decides; measured
+  on an M-series Mac, Node 20 and 22, about 0.13 ms per exception it does not read and about 1.8 ms
+  per exception it reads (the CHANGELOG has the numbers). It is a development tool; turn it off
+  under load.
+- **It can expose anything that was in scope**: a password a handler compared, the body it parsed,
+  a token in a closure. Keep `debug` to development, and protect the endpoint as the
+  [Security](#security) section says.
+- **With your own debugger attached**: the worker is one more debugger session. Pauses it did not
+  cause (your breakpoints) are left alone, but pauses on exceptions are resumed by it, including
+  ones you asked your debugger for ("pause on caught exceptions"). Set `debug.locals: false` while
+  you debug by hand.
 
 ### Events
 
@@ -552,7 +618,8 @@ and only log it. Without either package, or with `tools.runs: false`, nothing is
   substring of the emitted event or, as a pattern, what the emitter would match (`cat.*`).
 - **Never the event payload or the job's arguments.** A run keeps the class, method, module, job
   name or event, times, outcome and the error's name and message (and its `stack` with
-  [`debug`](#debug-stacks-of-failing-steps)); `requestId` when it started inside a traced request.
+  [`debug`](#debug-stacks-of-failing-steps), and its [`locals`](#locals-at-the-throw), where the
+  method's arguments are in scope); `requestId` when it started inside a traced request.
 - **The error line the scheduler (`Scheduler`) or the emitter (`Event`) logs after the method threw
   is written outside the run**, so it is in `logs_tail` without the `runId`; the run's `error` has
   what was thrown.
@@ -595,6 +662,14 @@ and only log it. Without either package, or with `tools.runs: false`, nothing is
   parsed from the stack V8 formatted, and each frame is looked up in the compiled file's source map
   (`node:module`'s `findSourceMap` and `SourceMap`; no dependency). Nothing is installed: no
   `Error.prepareStackTrace`, no change to `Error.stackTraceLimit` or to the process's source maps.
+- **Locals through a worker's inspector session.** With `debug.locals`, a worker thread opens a
+  `node:inspector` session on the main thread (`connectToMainThread`), with breakpoints inactive and
+  pause on every exception. On a pause it reads, only when a trace or run is in flight (a counter in
+  shared memory) and the frame is your code, the scopes with `Runtime.getProperties`, posts them and
+  resumes; the main thread pairs the capture with the error by its stack text when it records it.
+  No `Runtime.evaluate`, no `callFunctionOn`, no breakpoint is ever set
+  ([ADR-0005](docs/adr/0005-local-variables-read-under-debug.md)). The worker starts with the first
+  instance and stops when the last one is destroyed.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling the inspector's listener.
 
@@ -615,6 +690,10 @@ NestMcpModule.forRoot({
 Listening beyond loopback without `authorize` works, and logs a warning at every startup. Your app's
 own guards do not run on the inspector: to put your existing authentication in front of it, call it
 from `authorize` or put a reverse proxy before the listener.
+
+`debug` raises the stakes: with it, traces and runs carry the values of local variables at each
+throw ([Locals at the throw](#locals-at-the-throw)), which may include secrets and request bodies.
+It is off by default, whatever `enabled` is.
 
 ## Limitations
 
@@ -656,6 +735,8 @@ from `authorize` or put a reverse proxy before the listener.
   already mapped from JavaScript to JavaScript (a bundle's map applied by a custom
   `Error.prepareStackTrace`) is read as compiled code. A compiled file rebuilt while the process runs
   keeps the map read the first time.
+- With `debug.locals`, a process whose inspector is unavailable (Node built without it) logs a
+  warning and records stacks without locals; `app_info.debug.locals` says `failed` and why.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

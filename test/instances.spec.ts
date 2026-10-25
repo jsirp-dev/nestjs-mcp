@@ -57,7 +57,19 @@ describe('inspector instances', () => {
           runs: true,
         },
         requests: { headers: 'names' },
-        debug: { enabled: false, stackFrames: 30 },
+        debug: {
+          enabled: false,
+          stackFrames: 30,
+          locals: {
+            enabled: false,
+            frames: 5,
+            depth: 2,
+            properties: 20,
+            stringLength: 200,
+            bytes: 16384,
+            perMinute: 10,
+          },
+        },
       });
     });
 

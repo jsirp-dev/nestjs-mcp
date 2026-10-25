@@ -117,9 +117,22 @@ function present(
   route: RouteModel | undefined,
   untraced: ReadonlySet<string>,
 ): RequestTraceAnswer {
+  // An exception's locals go on the first step that recorded it (the one that threw), not on
+  // every interceptor it went through or the filter that caught it.
+  const shown = new Set<unknown>();
   const steps = trace.steps.map((step) => {
     const level = route ? levelOf(route, step) : undefined;
-    return level === undefined ? { ...step } : { ...step, level };
+    const copy = level === undefined ? { ...step } : { ...step, level };
+    const locals = step.error?.locals;
+    if (locals && shown.has(locals)) {
+      const error = { ...step.error! };
+      delete error.locals;
+      delete error.localsTruncated;
+      copy.error = error;
+    } else if (locals) {
+      shown.add(locals);
+    }
+    return copy;
   });
   const answer: RequestTraceAnswer = {
     ...trace,

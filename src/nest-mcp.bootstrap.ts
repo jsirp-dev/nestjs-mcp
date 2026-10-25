@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ModulesContainer } from '@nestjs/core';
 import { LOGGER_CONTEXT, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
+import { takeLocalsFailure } from './debug/debug.js';
 import { installLogs } from './logs/install-logs.js';
 import type { ResolvedNestMcpOptions } from './nest-mcp.options.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -19,7 +20,8 @@ import { createMcpHandler } from './transport/mcp-endpoint.js';
  * What each instance does over the app's lifecycle: at `onModuleInit`, joins (or installs) the
  * process-wide Logger tee, connects the host's log sink and joins the app's inspector listener with
  * its path; at `onApplicationBootstrap`, settles the job wrappers, opens the listener (the first
- * instance does) and writes the bootstrap log and warnings, once per instance, through Nest's
+ * instance does), waits for the locals worker to be armed (with `debug.locals`) and writes the
+ * bootstrap log and warnings, once per instance, through Nest's
  * `Logger` (context `NestMcp`); at `onModuleDestroy`, disconnects the sink and leaves the listener, which the last instance closes.
  */
 @Injectable()
@@ -75,12 +77,22 @@ export class NestMcpBootstrap implements OnModuleInit, OnApplicationBootstrap, O
     }
     this.context.mcpUrl = `${await this.listener.open()}${path}`;
     this.logger.log(`Inspector listening at ${this.context.mcpUrl}`);
+    // The app answers its first request with the locals worker armed (ADR-0005).
+    await this.context.debug?.ready();
+    const failure = takeLocalsFailure();
+    if (failure !== undefined) {
+      this.logger.warn(
+        `debug.locals is on but its inspector session could not start (${failure}); ` +
+          'errors carry their stack without locals.',
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
     this.context.logs?.uninstall();
-    this.context.debug?.release();
+    const debug = this.context.debug;
     this.context.debug = undefined;
+    await debug?.release();
     await this.listener?.leave(this.options.path);
     this.listener = undefined;
   }

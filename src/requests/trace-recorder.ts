@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { enterInFlight, leaveInFlight } from '../debug/locals-capture.js';
 import { performance } from 'node:perf_hooks';
 import type { RequestHeadersMode } from '../nest-mcp.options.js';
 import { RingBuffer } from '../support/ring-buffer.js';
@@ -75,9 +76,11 @@ export class TraceRecorder {
     }
     const active: ActiveTrace = { trace, t0: performance.now() };
     this.buffer.push({ trace });
+    enterInFlight();
 
     const finish = () => {
       if (trace.durationMs !== undefined) return;
+      leaveInFlight();
       trace.durationMs = round(performance.now() - active.t0);
       trace.statusCode = response.statusCode;
       if (response.writableFinished === false) trace.aborted = true;

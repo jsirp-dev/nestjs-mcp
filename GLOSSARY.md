@@ -63,8 +63,15 @@ _Avoid_: event, hop, stage
 **Frame**:
 One call in the `stack` of a recorded error, with the `debug` option on: function, file, line and
 column, the original source's when a source map is found (`mapped`), `external` when it is not the
-app's code. Only the position, never the code there or its variables.
+app's code. Only the position, never the code there; its variables are in *locals*.
 _Avoid_: call site (V8's API object), stack line, trace (a trace is a request's)
+
+**Locals**:
+With `debug.locals`, the values of the variables in scope in the top frames of a recorded error at
+the moment of its throw (`local` and `closure` scopes), read by the inspector's worker without
+running anything in the app, bounded, and aligned with the error's `stack`
+([ADR-0005](docs/adr/0005-local-variables-read-under-debug.md)). A *capture* is one reading of them.
+_Avoid_: variables dump, snapshot (Nest's `snapshot: true` is another thing), state
 
 **Run**:
 One execution of a scheduled job (`@Cron`, `@Interval`, `@Timeout`) or of an `@OnEvent` listener,

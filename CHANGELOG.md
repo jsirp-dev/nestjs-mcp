@@ -13,6 +13,132 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Local variables at the throw, under `debug` (ticket #26, 2026-10-25)
+
+#### Done
+
+- [ADR-0005](docs/adr/0005-local-variables-read-under-debug.md) (its own commit): under `debug`,
+  and only then, the inspector reads the values of local variables at a throw; read, never
+  evaluated. `00-overview.md` closed decisions 5 and 11 carry the exception.
+- New option `debug.locals: boolean | { frames?, depth?, properties?, stringLength?, bytes?,
+  perMinute? }`, on by default with `debug` (defaults 5, 2, 20, 200, 16384, 10); `false` keeps the
+  stacks of #25 without starting anything.
+- `TraceError` gains `locals: FrameLocals[]` (`{ function, file, line?, external?, scopes?: {
+  local, closure } }`), aligned with `stack`, plus `localsTruncated: true` when the byte budget cut
+  the capture and `localsSkipped: 'rate' | 'ambiguous'`. On the failing step of a trace and on the
+  error of a run.
+- The capture: `src/debug/locals-worker.ts`, built by tsup as its own entry
+  (`dist/locals-worker.{js,cjs}`, next to the bundle, in the bundle's format), runs a
+  `node:inspector` session connected with `connectToMainThread()`: debugger enabled with
+  breakpoints inactive, pause on every exception. On a pause it resumes at once unless a trace or
+  run is in flight (a counter in a `SharedArrayBuffer` the recorder and the run wrapper keep), the
+  exception is an `Error`, the top frame is the app's (not `node_modules`, `node:`, a script
+  without a file or this package's own directory) and it is not a rethrow from a `catch` block of
+  the caught error; then, within the rate, it reads the scopes with `Runtime.getProperties` (own
+  properties only) into a bounded preview (`src/debug/locals-preview.ts`), posts it on a
+  `MessagePort` and resumes. `src/debug/locals-capture.ts` starts and stops the worker, drains the
+  port synchronously with `receiveMessageOnPort` when an error is described and pairs the capture
+  with the error by its stack text.
+- `app_info.debug.locals: { state: 'off' | 'starting' | 'ready' | 'failed', error?, captured,
+  skippedRate }`; `options.debug` shows the resolved bounds. A worker that cannot start logs one
+  `warn` at bootstrap and stacks go on without locals.
+- The app's bootstrap (`onApplicationBootstrap` of the inspector) waits, at most 5 s, for the
+  session to be armed, so the first request is captured; `onModuleDestroy` of the last instance
+  terminates the worker.
+- README (options, "Locals at the throw", How it works, Security, Limitations, Runs), `GLOSSARY.md`
+  (*locals*, *frame*), `00-overview.md` (the option). Exported types `NestMcpLocalsOptions`,
+  `FrameLocals`, `LocalValue`, `LocalObject`, `LocalScopes`.
+
+#### Measured overhead
+
+`bench.cjs` (scratch, not in the repo): a Nest app on the built package, `fetch` to its own server,
+400 requests after 20 of warm-up, median and p90 in µs; and a loop of 20 000 `throw`/`catch` in app
+code with nothing in flight. M-series Mac, Nest 11.2.8.
+
+| | Node 20.19 | Node 22.18 |
+|---|---|---|
+| Request that throws, `debug` off | 421 (p90 568) | 412 (p90 610) |
+| Same, `debug: { locals: false }` (stacks only) | 434 (p90 587) | — |
+| Same, locals captured (2 frames of app code, an object, a 500-char string) | 2252 (p90 2592) | 2178 (p90 2515) |
+| Request that does not throw, locals on | 451 (p90 666) | 430 (p90 632) |
+| One `throw`/`catch` with nothing in flight, off | 2.0 | 1.6 |
+| Same, locals on (the pause the worker resumes without reading) | 136 | 131 |
+
+So **about 1.8 ms per captured exception** and **about 0.13 ms per exception the worker filters
+out**: the round trip of a pause to the worker and back, paid by every exception in the process
+while locals are on. A request without exceptions costs the same.
+
+#### Deviations from the ticket
+
+- **Correlation by stack text, not by request id**: the trace lives in an `AsyncLocalStorage`, which
+  a paused frame cannot reveal without running code. The worker gates on "a trace or run is in
+  flight" (shared counter) and keys each capture by the exception's description, which is its
+  `stack`; the main thread claims it when it describes that error. Two pending captures under the
+  same key are not guessed between: `localsSkipped: 'ambiguous'` (ADR-0005).
+- **`localsSkipped` has a second value**, `'ambiguous'`, for the case above.
+- **Runs get locals too** (the ticket's crons criterion let the ADR decide): a run opens the same
+  window as a trace, so excluding runs would have read them anyway whenever a request was in
+  flight. Exceptions with nothing in flight (startup, timers) are never read.
+- **Getters are named, not dropped**: an accessor shows as `[Getter]` (never called), so the agent
+  knows the property exists; data properties are the only values read.
+- **The 11th error of the minute is already skipped**: with the default rate of 10, the 11th and
+  12th get `localsSkipped: 'rate'` (the ticket's criterion names the 12th).
+
+#### Hot decisions
+
+- **The worker is a file of its own**, not inline code (`eval: true`): esbuild rewrites `require`
+  and helpers in an ESM bundle, so a stringified function would not survive the build. tsup emits
+  it next to `index` in both formats; the main bundle resolves it with `__filename` (shimmed in
+  ESM) and its own extension. It starts with `execArgv: []` (no preload hooks of the app) and a
+  64 MB heap limit, and is `unref`'d.
+- **Breakpoints inactive in the session** (`Debugger.setBreakpointsActive(false)`): otherwise a
+  `debugger` statement would stop an app that has no debugger attached. Pauses whose reason is not
+  `exception` or `promiseRejection` are left alone, so another debugger's breakpoints still work.
+- **Locals on the first step only**: every step that records the same exception (the handler, the
+  interceptors it crosses, the filter that catches it) shares one `locals` array; `request_trace`
+  shows it on the first of them, the one that threw. The stack stays on all of them, as in #25.
+- **Rethrows**: a pause whose top frame has a `catch` scope holding an error with the same stack
+  text is the app rethrowing what it caught; it is skipped, so the first throw keeps its locals and
+  the rate is not spent twice. A rethrow from a promise's `catch` handler is not detected.
+- **Pairing state is bounded**: at most 64 stack texts pending, the two latest captures under each,
+  dropped after 5 s unclaimed; a capture may take at most 200 ms of the main thread's pause before
+  reading stops.
+- **The positions of `locals` come from `stack`** when both name the same function at the same
+  index (the usual case, and the only one where ts-jest's own source maps agree); otherwise from the
+  paused frame, mapped through the same `SourceMaps`.
+
+#### Notes for the next session
+
+- The 0.13 ms per filtered exception is the floor of the "pause on all exceptions" design; arming
+  the session only while something is in flight would remove it but races the first exception of a
+  request (the toggle is asynchronous). Worth a ticket only if someone runs `debug` under load.
+- **Another debugger attached**: with VS Code attached and "pause on caught exceptions" on, the worker
+  resumes those pauses (README, Locals at the throw). Nothing detects it.
+
+#### Verification
+
+`test/debug-locals.spec.ts` (14 tests, fixture handlers `locals`, `locals-async`, `recovers`,
+`rethrows` in `FailingModule`; `JobsService.purge` gains a local): `total: 42` in the top frame of
+`FailingController.locals`, aligned with `stack[0]`; an async handler's local after `await`; the
+local object's getter never called (`getterCalls.count` stays 0, shown `[Getter]`), the 1 MB string
+cut to 200 characters plus its length, depth 2, the whole `locals` within 16 KB; bounds from the
+object form and `localsTruncated` under `bytes: 300`; 12 failing requests: 10 with locals, the 11th
+and 12th `localsSkipped: 'rate'`, `app_info` `captured: 10, skippedRate: 2`; an exception thrown
+with nothing in flight is not read (`captured: 0`); a `ParseIntPipe` exception (node_modules) is not
+read; a rethrow from `catch` keeps `descend`'s locals with one capture; the filter step that caught
+the exception has its stack but no locals; a cron run's error has `batch: 3`; responses and status
+codes of four routes identical with `debug` off and on; `Worker` never constructed with `debug`
+off, `false` or `{ locals: false }` (`state: 'off'`); the worker exits on `app.close()`; a `Worker`
+that throws gives `state: 'failed'`, one `warn`, stacks without locals. Red checks: without the
+in-flight gate the "nothing in flight" test fails; without the rethrow check the rethrow test fails.
+`test/locals-preview.spec.ts` (7 tests, a fake session): every kind of value (no function source
+kept, a `Map` never entered), the scopes read and those never read, external frames listed and not
+read, property and item limits, the byte budget, string truncation, the rethrow check. The ESM
+build checked by hand (`dist/index.js` finds `dist/locals-worker.js`, `total: 42`) on Node 20 and
+22. `yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (25 suites / 296
+tests) green on Nest 11.2.8 (Node 20.19 and 22.18) and on Nest 10.4.22 (scratch copy, Node 20.19
+and 22.18); `jest --detectOpenHandles` on the debug specs reports nothing.
+
 ### The `debug` option: source-mapped stacks on failing steps (ticket #25, 2026-10-25)
 
 #### Done
