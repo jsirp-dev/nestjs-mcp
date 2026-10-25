@@ -19,11 +19,12 @@ interface ListenerMetadata {
   options?: unknown;
 }
 
-function pattern(event: unknown): string | string[] {
+/** A declared `@OnEvent` event as text; an array is eventemitter2's segment form. */
+export function listenerPattern(event: unknown): string | string[] {
   return Array.isArray(event) ? event.map((segment) => eventText(segment)) : eventText(event);
 }
 
-function isRequestScoped(wrapper: InstanceWrapperLike): boolean {
+export function isRequestScoped(wrapper: InstanceWrapperLike): boolean {
   try {
     return wrapper.isDependencyTreeStatic?.() === false;
   } catch {
@@ -53,7 +54,7 @@ export function readListeners(
       const owner = moduleName(module);
       for (const { event, options } of declared) {
         const listener: EventListenerModel = {
-          event: pattern(event),
+          event: listenerPattern(event),
           className,
           methodName,
           module: owner,

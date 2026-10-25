@@ -4,6 +4,7 @@ import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
 import type { EventsInspector } from '../events/install-events.js';
+import type { RunsInspector } from '../runs/install-runs.js';
 import type { ScheduleInspector } from '../schedule/install-schedule.js';
 import type { LogsInspector } from '../logs/install-logs.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
@@ -51,6 +52,12 @@ export interface ToolContext {
    * otherwise, and then the group is not registered.
    */
   schedule: ScheduleInspector | undefined;
+  /**
+   * The app's job and listener runs, set in `configure` of the instance's module when the `runs`
+   * group is on and at least one of `@nestjs/schedule` and `@nestjs/event-emitter` is installed
+   * with its module imported; `undefined` otherwise, and then the group is not registered.
+   */
+  runs: RunsInspector | undefined;
   /** The endpoint's path on the inspector listener, with a leading slash (`/` for the root). */
   mcpPath(): string;
   /**
@@ -86,6 +93,7 @@ export function createToolContext(
     traces: undefined,
     events: undefined,
     schedule: undefined,
+    runs: undefined,
     mcpPath() {
       return `/${options.path}`;
     },

@@ -42,7 +42,7 @@ _Avoid_: command, action, endpoint
 
 **Tool group**:
 The tools that share a prefix and a switch: `app`, `graph`, `routes`, `logs`, `requests`, `events`,
-`schedule`.
+`schedule`, `runs`.
 _Avoid_: feature, module (reserved for Nest modules)
 
 **Enhancer**:
@@ -59,6 +59,13 @@ _Avoid_: log (the Logger output is a different thing), span, request history
 One recorded unit inside a trace: an enhancer, the handler, or an exception filter, with its outcome
 and duration.
 _Avoid_: event, hop, stage
+
+**Run**:
+One execution of a scheduled job (`@Cron`, `@Interval`, `@Timeout`) or of an `@OnEvent` listener,
+started by the scheduler or the emitter: kind, class, method, job name or event, timing, outcome
+(`running`, `ok` or `threw`) and the error. Never the event payload or the job's arguments. A log
+entry written during a run carries its id as `runId`.
+_Avoid_: execution, job run, invocation, trace (a trace is a request's)
 
 **Snapshot**:
 Nest's `snapshot: true` option in `NestFactory.create`, which makes Nest keep the serialized graph the

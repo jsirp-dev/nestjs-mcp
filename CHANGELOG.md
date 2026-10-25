@@ -13,6 +13,95 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Each run of a scheduled job or event listener is recorded (ticket #28, 2026-10-25)
+
+#### Done
+
+- A new tool group, `runs`, with its switch (`tools.runs`) and `runs.bufferSize` (default 500, one
+  buffer per app): `runs_list({ kind?, name?, event?, outcome?, limit?, scope? })` and
+  `run_get({ id, scope? })`. A *run* is one execution of a `@Cron`, `@Interval` or `@Timeout`
+  method started by the scheduler, or of an `@OnEvent` method started by the emitter: kind, class,
+  method, module, job name or emitted event, start, duration, outcome (`running`, `ok` or `threw`),
+  the error's name and message, and `requestId` when it started inside a traced request. Never the
+  payload or the arguments. The group is registered only when `@nestjs/schedule` or
+  `@nestjs/event-emitter` is installed and its module imported.
+- `run_get` lists the run's log lines (newest 200, `logsTruncated`, `logsDropped`) with the `logs`
+  group on; log entries gain `runId`, and `logs_tail` a `runId` filter. `currentOrigin()` in
+  `src/logs/log-origin.ts` now reads the run as well as the trace: an entry may belong to both,
+  so the owners on an entry are a list.
+- `schedule_jobs` gains `lastRun` (`{ id, startedAt, outcome, durationMs? }`) per decorated job and
+  `events_listeners` per listener (matched by class, method, module and, for listeners, the
+  pattern).
+- `src/runs/`: `install-runs.ts` (the wrappers), `run-context.ts` (the run and emission
+  `AsyncLocalStorage`s), `present.ts` (the answer shape and `lastRun`), `model.ts`.
+- [ADR-0006](docs/adr/0006-runs-by-wrapping-job-and-listener-methods.md) (its own commit),
+  README (Runs, How it works, Limitations, options, logs), `GLOSSARY.md` (*run*, the `runs` group),
+  `00-overview.md` (the group and its option).
+
+#### Deviations from the ticket
+
+- **`schedule_jobs.lastRun` was taken**: it held the `CronJob`'s own `lastDate()` as a string. The
+  ticket gives the name to the recorded run, so the cron's value is now `lastFiredAt`. The answer
+  changes shape; nothing was released yet.
+
+#### Hot decisions
+
+- **An ADR, not a note**: ADR-0002 wraps enhancers, which only Nest's request pipeline calls. Job
+  and listener methods are the app's own methods, each peer reads them at a different moment, and
+  the app may call them itself; that took decisions of its own (ADR-0006).
+- **Own property on the instance, not the prototype**, defined in `configure` (before any
+  `onModuleInit`): `ScheduleExplorer` reads `instance[method]` at its `onModuleInit` and binds it
+  for good; `EventSubscribersLoader` reads `instance[method]` at every emission. Both read the
+  decorator metadata off the function, so the wrapper carries a copy of it.
+- **Job wrappers are taken back at `onApplicationBootstrap`** (every `onModuleInit` ran by then):
+  the scheduler keeps the wrapper it bound, while the app's own calls reach the original and are
+  not runs. An own property the app had set is put back as it was.
+- **A listener run needs an emission**: the runs group wraps `emit`/`emitAsync` once more (its own
+  mark, independent of the `events` recorder) only to open an emission context with the event. The
+  listener wrapper records only inside one whose event its declared pattern matches (through the
+  emitter's own matcher, cached), so direct calls pass through and the run knows its event. With
+  `tools.events: false` and `tools.runs` on, `emit` is therefore wrapped; the events spec now
+  switches both off to check it is not.
+- **A run is pushed when it starts, with `outcome: 'running'`**, and completed in place: a long
+  job shows while it runs, and the lines it logs have a run to point to. The ticket names `ok` and
+  `threw`; `running` is the in-flight state before either.
+- **Only native promises are observed** for the end of a run: calling `then` on another thenable
+  may start its work again (a lazy query). Anything else ends the run when the method returns.
+- **Group name `runs`**, tools `runs_list` and `run_get` as the ticket proposed; the run id is a
+  UUID; `runs_list` answers oldest first, the newest `limit`, as `events_recent` and `logs_tail` do.
+- **`name` matches the decorator name or `Class.method`**: an unnamed job has only the id the
+  registry generates, unknown when the wrapper is built.
+
+#### Notes for the next session
+
+- The line the scheduler (`Scheduler`) or the emitter loader (`Event`) logs after a method threw is
+  written outside the wrapper, so it has no `runId`; the run's `error` carries the exception.
+- Request-scoped listeners (resolved per emission) and jobs the app adds to the registry by hand
+  are not recorded; `events_listeners` already marks the former `requestScoped`.
+- The log owners symbol is now `Symbol.for('@jsirp/nestjs-mcp/log-owners')` and holds an array.
+- `test/fixtures/app/runs.module.ts` (opt-in `runs: true`, needs both peers): a cron that logs and
+  throws (fired with `fireOnTick()`), a timeout and an interval that succeed, listeners that throw
+  sync, async and with `suppressErrors: false`, an `async: true` listener, and a controller that
+  emits inside a request.
+
+#### Verification
+
+`test/runs.spec.ts` (11 tests): a cron fired through the registry is listed by
+`runs_list({ outcome: 'threw' })` with its error and `schedule_jobs` shows its `lastRun` as
+`threw`; a timeout and an interval are `ok` with their duration; `run_get` lists the line logged
+inside the run and `logs_tail({ runId })` the same seqs, while the scheduler's error line has no
+`runId`; an `async: true` listener's run and line; `emit`/`emitAsync` give the same values and
+rejections with and without the inspector (sync and async throws, `suppressErrors: false`,
+`async: true`, a value returned, no listener), and each throwing listener is `threw`, with
+`events_listeners.lastRun`; direct calls are not runs; a `forFeature` instance lists only
+`CatsService` runs and answers `not_found` for one outside; a listener run inside a request carries
+its `requestId` and its line is in both `run_get` and `request_trace`; with `tools.runs: false` no
+tool and no own property; without the peers' modules no tool. `test/without-peers.spec.ts`: no
+`run*` tool, `app_info.tools.runs: false`, a method with both peers' metadata left unwrapped.
+Red check: with the property definition disabled, 7 of the 11 fail (the other 4 assert absences).
+`yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (20 suites / 253
+tests) green on Nest 11.2.8 and on Nest 10.4.22 (scratch copy).
+
 ### Log entries carry the request they were written in (ticket #27, 2026-10-25)
 
 #### Done

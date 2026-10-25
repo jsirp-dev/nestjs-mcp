@@ -27,7 +27,7 @@ function isEmitter(value: unknown): value is EmitterLike {
  * The emitter `EventEmitterModule` provides: the provider whose token is the package's
  * `EventEmitter2`, or, when the app resolves another copy of it, a class token of that name.
  */
-function findEmitter(container: ContainerLike, peerClass: unknown): EmitterLike | undefined {
+export function findEmitter(container: ContainerLike, peerClass: unknown): EmitterLike | undefined {
   let byClass: EmitterLike | undefined;
   let byName: EmitterLike | undefined;
   forEachInstance(container, ['providers'], (wrapper) => {
@@ -45,7 +45,7 @@ function findEmitter(container: ContainerLike, peerClass: unknown): EmitterLike 
  * `delimiter` gets one listener on the pattern, and `listenerCount(event)` says whether it fires.
  * Falls back to equality when the class cannot be built that way.
  */
-function matcher(emitter: EmitterLike): EventsInspector['matches'] {
+export function matcher(emitter: EmitterLike): EventsInspector['matches'] {
   type Probe = EmitterLike & { on(event: unknown, listener: () => void): unknown };
   const Emitter = (emitter as { constructor?: unknown }).constructor as
     (new (options: object) => Probe) | undefined;

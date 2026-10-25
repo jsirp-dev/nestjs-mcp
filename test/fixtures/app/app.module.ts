@@ -12,6 +12,7 @@ import { AppGuard } from './global.guards.js';
 import { HealthModule } from './health.module.js';
 import { LoggedModule } from './logged.module.js';
 import { TraceModule } from './trace.middleware.js';
+import { RunsModule } from './runs.module.js';
 import { UploadFeatureModule } from './upload.module.js';
 import { WrappedModule } from './wrapped.module.js';
 
@@ -46,6 +47,8 @@ export interface FixtureAppOptions {
   wrapped?: boolean;
   /** Import `LoggedModule`: handlers that log through Nest's `Logger`, one of them then throws. */
   logged?: boolean;
+  /** Import `RunsModule`: jobs and listeners that throw, succeed and log. Needs both peers. */
+  runs?: boolean;
   /** Import `UploadFeatureModule`: multer in a feature module two levels below the root. */
   upload?: boolean;
   /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
@@ -84,6 +87,7 @@ export class AppModule {
         ...(options.wrapped ? [WrappedModule] : []),
         ...(options.logged ? [LoggedModule] : []),
         ...(options.upload ? [UploadFeatureModule] : []),
+        ...(options.runs ? [RunsModule] : []),
         ...(options.events
           ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]
           : []),

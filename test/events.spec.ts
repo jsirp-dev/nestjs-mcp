@@ -163,7 +163,10 @@ describe('events tools', () => {
   });
 
   it('with tools.events off, nothing is registered and emit is not wrapped', async () => {
-    const client = await boot({ root: { kind: 'sync', options: { tools: { events: false } } } });
+    // The runs group wraps emit too (to know which event a listener runs for): off as well.
+    const client = await boot({
+      root: { kind: 'sync', options: { tools: { events: false, runs: false } } },
+    });
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).filter((name) => name.startsWith('events_'))).toEqual([]);
     expect(Object.prototype.hasOwnProperty.call(emitter(), 'emit')).toBe(false);

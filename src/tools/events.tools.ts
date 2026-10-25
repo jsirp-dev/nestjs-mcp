@@ -4,6 +4,7 @@ import type { EventsInspector } from '../events/install-events.js';
 import { readListeners } from '../events/listeners-reader.js';
 import type { EmissionRecord, EventListenerModel } from '../events/model.js';
 import type { Sequenced } from '../support/ring-buffer.js';
+import { lastRunOf } from '../runs/present.js';
 import { moduleNamer } from './module-name.js';
 import { ToolError, type ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
@@ -49,7 +50,9 @@ export function registerEventsTools(registry: ToolRegistry, context: ToolContext
       'Every @OnEvent listener (@nestjs/event-emitter) of the providers and controllers in scope: ' +
       'the event pattern as declared, class, method, module and decorator options. With event, ' +
       'only listeners whose pattern contains it or that the emitter would call for it (wildcards ' +
-      "and delimiter resolved by the emitter itself). scope: 'app' lifts a module scope.",
+      "and delimiter resolved by the emitter itself). scope: 'app' lifts a module scope. With the " +
+      'runs tools on, each carries lastRun: its latest recorded run (id, startedAt, outcome, ' +
+      'durationMs); runs_list has its error.',
     inputSchema: {
       event: z
         .string()
@@ -64,11 +67,19 @@ export function registerEventsTools(registry: ToolRegistry, context: ToolContext
       const typed = input as { event?: string; scope?: 'instance' | 'app' };
       const active = events();
       const instanceScope = typed.scope === 'app' ? { kind: 'app' as const } : context.scope();
-      const listeners = readListeners(active.container, moduleNamer(context.graph))
+      const namer = moduleNamer(context.graph);
+      const listeners = readListeners(active.container, namer)
         .filter((listener) => inScope(instanceScope, listener.module))
         .filter(
           (listener) => typed.event === undefined || names(active, listener.event, typed.event),
         );
+      const { runs } = context;
+      if (runs) {
+        for (const listener of listeners) {
+          const lastRun = lastRunOf(runs, namer, { ...listener, kinds: ['listener'] });
+          if (lastRun) listener.lastRun = lastRun;
+        }
+      }
       return {
         scope: describeScope(instanceScope),
         wildcard: active.emitter.wildcard === true,

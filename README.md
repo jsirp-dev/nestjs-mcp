@@ -123,7 +123,7 @@ All optional, except `path` in `forFeature`.
 | `listen` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the app: set it on one instance, or the same on all (two different ones fail at startup). `port: 0` picks a free port; the startup log and `app_info.mcpUrl` say which. A port in use fails at startup with an error naming `listen.port`. |
 | `path` | `'/'` for `forRoot`; required for `forFeature` | Route of the instance on the listener. No prefix or versioning applies. Two instances on one path fail at startup. |
 | `authorize` | none | `(req) => boolean \| Promise<boolean>`, called with the raw Node `IncomingMessage` before each request to this instance is answered. `false`, or a throw (logged), answers 403. |
-| `tools` | all `true` | One switch per tool group: `{ graph, routes, logs, requests, events, schedule }`. A group switched off registers no tools and installs nothing. |
+| `tools` | all `true` | One switch per tool group: `{ graph, routes, logs, requests, events, schedule, runs }`. A group switched off registers no tools and installs nothing. |
 | `logs.bufferSize` | `2000` | Size of the ring buffer `logs_tail` reads. |
 | `logs.sink` | none | What `createLogSink()` returned, added to your own logger's outputs: that logger's lines enter the buffer too. See [Reading your own logger](#reading-your-own-logger). |
 | `logs.capture` | `'both'` | What fills the buffer: `'nest'` (Nest's `Logger`, through the tee), `'sink'` (only `logs.sink`; no tee is installed) or `'both'`. `'sink'` requires `logs.sink`. |
@@ -131,6 +131,7 @@ All optional, except `path` in `forFeature`.
 | `requests.bufferSize` | `500` | How many request traces are kept. |
 | `requests.idHeader` | `'x-nest-mcp-request-id'` | The correlation header an agent sets to find a request's trace. Read, never echoed back. |
 | `requests.headers` | `'names'` | Which request headers a trace keeps: `'none'`, `'names'` or `'full'`. Bodies never. |
+| `runs.bufferSize` | `500` | How many job and listener runs are kept. One buffer per app: the first instance that installs it sets the size. |
 | `serverInfo` | your app's `package.json` | `{ name, version }` the server reports in the MCP `initialize` handshake. |
 
 `authorize` is a plain function, not a Nest guard: there is no `ExecutionContext`. Close over what
@@ -158,6 +159,7 @@ NestMcpModule.forRootAsync({
 | `requests` | `requests_list`, `request_trace` | ✅ |
 | `events` | `events_listeners`, `events_recent` (only with `@nestjs/event-emitter` and its module) | ✅ |
 | `schedule` | `schedule_jobs` (only with `@nestjs/schedule` and its module) | ✅ |
+| `runs` | `runs_list`, `run_get` (only with `@nestjs/schedule` or `@nestjs/event-emitter` and its module) | ✅ |
 
 Every tool returns JSON as a single text block. Errors come back as `{ "error": "<code>", "hint": "…" }`
 with `isError: true`, plus what helps to retry (`candidates`, for example).
@@ -235,7 +237,7 @@ instance installs nothing.
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `source?` (`'nest'` or `'sink'`), `requestId?`, `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, source, timestamp, level, context, message, stack?, requestId? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
+| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `source?` (`'nest'` or `'sink'`), `requestId?`, `runId?`, `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, source, timestamp, level, context, message, stack?, requestId?, runId? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
 | `logs_levels` | — | `levels` Nest's logger has on (`null` if it has no `isLevelEnabled`, or with `capture: 'sink'`), `capture`, the `buffer` (`size`, `length`, `lastSeq`) and the `sink` (`connected`, `received`, `errors`, `lastError?`; `null` without one) |
 
 - Levels are Nest's: `verbose`, `debug`, `log`, `warn`, `error`, `fatal`. `minLevel` keeps that level
@@ -264,6 +266,9 @@ instance installs nothing.
   `pino.transport`) or one the sink held before it was connected. A line logged by a middleware
   that runs after one that lost the async context (and before the first guard) has none either. It
   needs the `requests` group on; without it no entry carries one.
+- **`runId`** is, likewise, the id of the job or listener [run](#runs) executing when the entry was
+  captured; `logs_tail({ runId })` and `run_get` read a run's lines. A line a listener writes while
+  it runs inside a request carries both ids. It needs the `runs` group on.
 
 ### Reading your own logger
 
@@ -440,7 +445,7 @@ no `events_*` tools and `app_info.tools.events` is `false`.
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `events_listeners` | `event?`, `scope?` (`'instance'` or `'app'`) | `listeners`, each `{ event, className, methodName, module, options?, requestScoped? }`; `wildcard` (whether the emitter resolves wildcards) |
+| `events_listeners` | `event?`, `scope?` (`'instance'` or `'app'`) | `listeners`, each `{ event, className, methodName, module, options?, requestScoped?, lastRun? }`; `wildcard` (whether the emitter resolves wildcards) |
 | `events_recent` | `limit?` (≤ 500, default 50), `event?` | `entries`, oldest first, each `{ seq, event, method, timestamp, listeners }`; `emissions: 'app-wide'` |
 
 - **Listeners come from the `@OnEvent` metadata** of every provider and controller, request-scoped
@@ -462,7 +467,7 @@ and `app_info.tools.schedule` is `false`.
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `schedule_jobs` | `kind?` (`'cron'`, `'interval'` or `'timeout'`), `scope?` (`'instance'` or `'app'`) | `jobs`, each `{ kind, name, className?, methodName?, module?, expression?, timeZone?, everyMs?, delayMs?, running?, lastRun?, nextRun? }` |
+| `schedule_jobs` | `kind?` (`'cron'`, `'interval'` or `'timeout'`), `scope?` (`'instance'` or `'app'`) | `jobs`, each `{ kind, name, className?, methodName?, module?, expression?, timeZone?, everyMs?, delayMs?, running?, lastFiredAt?, nextRun?, lastRun? }` |
 
 ```jsonc
 // schedule_jobs { "kind": "cron" }, for @Cron('0 3 * * *', { name: 'cleanup' }) on CatsService
@@ -471,7 +476,8 @@ and `app_info.tools.schedule` is `false`.
   "nextRun": "2026-10-26T03:00:00.000+01:00" }] }
 ```
 
-- **The registry is read on every call**: cron jobs (`expression`, `running`, `lastRun`, and
+- **The registry is read on every call**: cron jobs (`expression`, `running`, `lastFiredAt` as the
+  `CronJob` knows it, and
   `nextRun` while running), intervals (`everyMs`) and timeouts (`delayMs`; `running: false` once
   fired or cleared), the ones the app added with `addCronJob`/`addInterval`/`addTimeout` included.
   `timeZone` appears when it differs from the process's own.
@@ -480,6 +486,41 @@ and `app_info.tools.schedule` is `false`.
   matched by its expression or period when exactly one job has it.
 - A `forFeature` instance lists only jobs declared by classes in its scope. A job the app added to
   the registry by hand has no class, so only `scope: 'app'` (or a `forRoot` instance) lists it.
+- With the `runs` group on, a decorated job carries `lastRun` (`{ id, startedAt, outcome,
+  durationMs? }`), its latest [run](#runs); so does each listener of `events_listeners`.
+
+### Runs
+
+With `@nestjs/schedule` or `@nestjs/event-emitter` installed and its module imported, the inspector
+records each execution (a *run*) of the decorated jobs and of the `@OnEvent` listeners: what ran, when,
+for how long, and whether it threw, with the error, even though the scheduler and the emitter catch it
+and only log it. Without either package, or with `tools.runs: false`, nothing is wrapped, there are no
+`runs_list` or `run_get` and `app_info.tools.runs` is `false`.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `runs_list` | `kind?` (`'cron'`, `'interval'`, `'timeout'` or `'listener'`), `name?`, `event?`, `outcome?` (`'running'`, `'ok'` or `'threw'`), `limit?` (≤ 500, default 50), `scope?` (`'instance'` or `'app'`) | `runs`, oldest first, each `{ id, kind, className, methodName, module, name?, event?, startedAt, durationMs?, outcome, error?, requestId? }` |
+| `run_get` | `id`, `scope?` | `run`: the same fields, and `logs` (at most 200, the newest), `logsTruncated?`, `logsDropped?` with the `logs` group on |
+
+```jsonc
+// runs_list { "outcome": "threw" }, for @Cron('0 5 * * *', { name: 'purge' }) that threw
+{ "scope": { "kind": "app" }, "runs": [{ "id": "…", "kind": "cron", "className": "JobsService",
+  "methodName": "purge", "module": "JobsModule", "name": "purge",
+  "startedAt": "2026-10-26T05:00:00.002Z", "durationMs": 1.42, "outcome": "threw",
+  "error": { "name": "Error", "message": "purge failed" } }] }
+```
+
+- **Only what the scheduler or the emitter starts is a run.** A call your code makes to the method
+  itself is not recorded. `name` matches the job's decorator name or `Class.method`; `event` matches a
+  substring of the emitted event or, as a pattern, what the emitter would match (`cat.*`).
+- **Never the event payload or the job's arguments.** A run keeps the class, method, module, job
+  name or event, times, outcome and the error's name and message; `requestId` when it started inside
+  a traced request.
+- **The error line the scheduler (`Scheduler`) or the emitter (`Event`) logs after the method threw
+  is written outside the run**, so it is in `logs_tail` without the `runId`; the run's `error` has
+  what was thrown.
+- A `forFeature` instance lists only runs of classes in its scope. One buffer of the latest
+  `runs.bufferSize` runs per app, shared by the instances; a run in progress has `outcome: 'running'`.
 
 ## How it works
 
@@ -504,6 +545,15 @@ and `app_info.tools.schedule` is `false`.
   the event name and listener count and then call the original. Nothing else of the emitter changes.
 - **Scheduled jobs by reading the registry.** With the `schedule` group on, the module finds the
   app's `SchedulerRegistry` and reads it per call. Nothing is wrapped, started or stopped.
+- **Runs by wrapping job and listener methods.** With the `runs` group on, before any
+  `onModuleInit`, the module defines on each long-lived provider or controller with a `@Cron`,
+  `@Interval`, `@Timeout` or `@OnEvent` method an own property wrapping it, carrying the original's
+  metadata so the scheduler and the emitter still find the decorators. The scheduler binds the job
+  wrapper at its `onModuleInit`, and at `onApplicationBootstrap` the module takes the property back,
+  so your own calls go to the original. Listener wrappers stay, and record only when called inside an
+  `emit`/`emitAsync` (wrapped to know the event) for an event the method listens to. Each wrapper
+  returns what the original returned (the same promise) and throws what it threw
+  ([ADR-0006](docs/adr/0006-runs-by-wrapping-job-and-listener-methods.md)).
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling the inspector's listener.
 
@@ -556,6 +606,10 @@ from `authorize` or put a reverse proxy before the listener.
 - `schedule_jobs` lists what `SchedulerRegistry` holds: a decorated job `ScheduleModule` did not
   register (a request-scoped provider, a kind switched off in `forRoot`) is not listed. Periods and
   pending state of intervals and timeouts are read from Node's timer objects.
+- Runs are not recorded for request-scoped listeners (the emitter builds an instance per emission)
+  nor for jobs your app adds to `SchedulerRegistry` itself, which run its own callbacks. A method
+  that is both a job and a listener records a job run when the scheduler calls it outside an
+  emission.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

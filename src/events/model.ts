@@ -1,3 +1,5 @@
+import type { LastRun } from '../runs/model.js';
+
 /** One `@OnEvent` listener as `events_listeners` answers it. */
 export interface EventListenerModel {
   /** The pattern as declared; an array is eventemitter2's segment form. Symbols by description. */
@@ -10,6 +12,8 @@ export interface EventListenerModel {
   options?: Record<string, unknown>;
   /** The class has no long-lived instance; Nest creates one per emission. */
   requestScoped?: true;
+  /** With the `runs` group on: the latest run recorded of this listener (never request-scoped). */
+  lastRun?: LastRun;
 }
 
 /** One `emit`/`emitAsync` call as the ring buffer keeps it. Never the payload. */

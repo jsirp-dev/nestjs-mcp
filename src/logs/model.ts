@@ -34,6 +34,11 @@ export interface LogRecord {
    * the generated id `requests_list` shows); absent outside a request.
    */
   requestId?: string;
+  /**
+   * The id of the job or listener run executing when the entry was captured (as `runs_list` shows
+   * it); absent outside a run.
+   */
+  runId?: string;
 }
 
 /** What `logs_tail` answers per entry. */

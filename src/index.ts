@@ -28,3 +28,5 @@ export type {
   TraceStepOutcome,
 } from './requests/model.js';
 export type { RequestSummary, RequestTraceAnswer } from './tools/requests.tools.js';
+export type { LastRun, RunKind, RunModel, RunOutcome, RunRecord } from './runs/model.js';
+export type { RunAnswer, RunsListAnswer } from './tools/runs.tools.js';

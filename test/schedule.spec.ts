@@ -48,7 +48,7 @@ describe('schedule tools', () => {
     expect(cleanup.nextRun).toMatch(ISO);
     expect(Date.parse(cleanup.nextRun)).toBeGreaterThan(Date.now());
     expect(new Date(cleanup.nextRun).getHours()).toBe(3);
-    expect(cleanup).not.toHaveProperty('lastRun');
+    expect(cleanup).not.toHaveProperty('lastFiredAt');
   });
 
   it('matches an unnamed decorated cron back to its method by expression', async () => {
@@ -232,7 +232,7 @@ describe('readJobs', () => {
         expression: '0 5 * * *',
         timeZone: 'Europe/Madrid',
         running: true,
-        lastRun: '2029-12-31T04:00:00.000Z',
+        lastFiredAt: '2029-12-31T04:00:00.000Z',
         nextRun: '2030-01-01T05:00:00.000+01:00',
       },
     ]);

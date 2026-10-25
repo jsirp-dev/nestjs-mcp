@@ -145,7 +145,7 @@ function readCron(name: string, job: unknown): RegisteredJob {
   const active = attempt(() => cron.isActive ?? cron.running);
   if (typeof active === 'boolean') model.running = active;
   const last = attempt(() => asText(cron.lastDate?.()));
-  if (last !== undefined) model.lastRun = last;
+  if (last !== undefined) model.lastFiredAt = last;
   if (model.running !== false) {
     const next = attempt(() => asText(cron.nextDate?.()));
     if (next !== undefined) model.nextRun = next;
@@ -227,7 +227,7 @@ function reorder(job: ScheduledJobModel): ScheduledJobModel {
     'everyMs',
     'delayMs',
     'running',
-    'lastRun',
+    'lastFiredAt',
     'nextRun',
   ];
   const ordered: Partial<ScheduledJobModel> = {};

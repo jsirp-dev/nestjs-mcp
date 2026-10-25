@@ -83,6 +83,7 @@ describe('inspector listener', () => {
         requests: true,
         events: false,
         schedule: false,
+        runs: false,
       },
       options: {
         tools: {
@@ -92,6 +93,7 @@ describe('inspector listener', () => {
           requests: true,
           events: true,
           schedule: true,
+          runs: true,
         },
         requests: { headers: 'names' },
       },

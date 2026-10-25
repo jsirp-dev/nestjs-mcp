@@ -6,6 +6,7 @@ import {
   DEFAULT_LISTEN_PORT,
   DEFAULT_LOGS_BUFFER_SIZE,
   DEFAULT_REQUESTS_BUFFER_SIZE,
+  DEFAULT_RUNS_BUFFER_SIZE,
 } from './constants.js';
 import { isLogSink, type LogSink } from './logs/log-sink.js';
 import type { LogNormalizer } from './logs/normalize.js';
@@ -15,7 +16,8 @@ import { hostPackageInfo } from './support/package-info.js';
 export type InstanceScopeKind = 'app' | 'module';
 
 /** The tool groups with a switch. `app` is always on. */
-export type SwitchableToolGroup = 'graph' | 'routes' | 'logs' | 'requests' | 'events' | 'schedule';
+export type SwitchableToolGroup =
+  'graph' | 'routes' | 'logs' | 'requests' | 'events' | 'schedule' | 'runs';
 
 export type ToolGroup = 'app' | SwitchableToolGroup;
 
@@ -26,6 +28,7 @@ export const SWITCHABLE_TOOL_GROUPS: readonly SwitchableToolGroup[] = [
   'requests',
   'events',
   'schedule',
+  'runs',
 ];
 
 /** Which request headers a trace keeps. Bodies are never kept. */
@@ -79,6 +82,11 @@ export interface NestMcpOptions {
    */
   logs?: NestMcpLogsOptions;
   requests?: { bufferSize?: number; idHeader?: string; headers?: RequestHeadersMode };
+  /**
+   * The ring buffer of job and listener runs (`runs_list`). Shared by every instance of the app:
+   * the first instance that installs it sets its size. Default `{ bufferSize: 500 }`.
+   */
+  runs?: { bufferSize?: number };
   /** What the server reports in `initialize`. Default: the app's `package.json`. */
   serverInfo?: { name?: string; version?: string };
 }
@@ -116,6 +124,7 @@ export interface ResolvedNestMcpOptions {
     normalize: LogNormalizer | undefined;
   };
   requests: { bufferSize: number; idHeader: string; headers: RequestHeadersMode };
+  runs: { bufferSize: number };
   serverInfo: { name: string; version: string };
 }
 
@@ -238,6 +247,13 @@ export function resolveOptions(
       ),
       idHeader: (options.requests?.idHeader ?? DEFAULT_ID_HEADER).toLowerCase(),
       headers,
+    },
+    runs: {
+      bufferSize: positiveInteger(
+        options.runs?.bufferSize,
+        DEFAULT_RUNS_BUFFER_SIZE,
+        'runs.bufferSize',
+      ),
     },
     serverInfo: {
       name: options.serverInfo?.name ?? host.name ?? 'nestjs-app',

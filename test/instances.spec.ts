@@ -54,6 +54,7 @@ describe('inspector instances', () => {
           requests: true,
           events: true,
           schedule: true,
+          runs: true,
         },
         requests: { headers: 'names' },
       });

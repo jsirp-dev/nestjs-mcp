@@ -24,7 +24,7 @@ function isRegistry(value: unknown): value is SchedulerRegistryLike {
  * The registry `ScheduleModule` provides: the provider whose token is the package's
  * `SchedulerRegistry`, or, when the app resolves another copy of it, a class token of that name.
  */
-function findRegistry(
+export function findRegistry(
   container: ContainerLike,
   peerClass: unknown,
 ): SchedulerRegistryLike | undefined {

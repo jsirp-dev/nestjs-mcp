@@ -82,9 +82,10 @@ the process runs one Nest app): `forRoot` answers at `/`, each `forFeature` at i
 | `listen` | `{ host?: string; port?: number }` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the app: set on one instance or the same on all. `port: 0` picks a free one. A busy port fails at startup naming this option |
 | `path` | `string` | `'/'` for `forRoot`; **required** for `forFeature` | Route of the instance on the listener; no host prefix or versioning applies |
 | `authorize` | `(req) => boolean \| Promise<boolean>` | none | Access control over the raw request, per instance; `false` (or a throw) → 403. Listening outside loopback without it logs a `warn` |
-| `tools` | `{ graph?, routes?, logs?, requests?, events?, schedule? }` booleans | all `true` | One switch per tool group. Off removes its tools and, for `logs` and `requests`, installs nothing intrusive |
+| `tools` | `{ graph?, routes?, logs?, requests?, events?, schedule?, runs? }` booleans | all `true` | One switch per tool group. Off removes its tools and, for `logs`, `requests` and `runs`, installs nothing intrusive |
 | `logs` | `{ bufferSize?: number; sink?: LogSink; capture?: 'nest' \| 'sink' \| 'both'; normalize?: (record) => entry }` | `{ bufferSize: 2000, capture: 'both' }` | Ring buffer for the Logger tee and, with `sink` (from `createLogSink()`, attached by the host to its own logger), the host's logger output too. Transparent: nothing masked or altered |
 | `requests` | `{ bufferSize?: number; idHeader?: string; headers?: 'none' \| 'names' \| 'full' }` | `{ bufferSize: 500, idHeader: 'x-nest-mcp-request-id', headers: 'names' }` | Per-request traces. The id header is read, never echoed back. Full URL is stored; request headers per `headers`; bodies never |
+| `runs` | `{ bufferSize?: number }` | `{ bufferSize: 500 }` | Ring buffer of job and listener runs, one per app ([ADR-0006](../adr/0006-runs-by-wrapping-job-and-listener-methods.md)) |
 | `serverInfo` | `{ name?: string; version?: string }` | the host app's `package.json` | What the server reports in `initialize` |
 
 Warnings at bootstrap, once each, through Nest's `Logger` (context `NestMcp`): the listener URL; missing
@@ -100,6 +101,7 @@ MCP tools (`snake_case`, grouped by prefix; every tool answers JSON as one text 
 | `logs` | `logs_tail`, `logs_levels` | 4 |
 | `requests` | `requests_list`, `request_trace` | 5 |
 | `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | 6 |
+| `runs` | `runs_list`, `run_get` | ticket [#28](https://github.com/jsirp-dev/nestjs-mcp/issues/28) |
 
 ## Scope: app or module
 

@@ -1,3 +1,5 @@
+import type { LastRun } from '../runs/model.js';
+
 export type ScheduledJobKind = 'cron' | 'interval' | 'timeout';
 
 /** One job of `SchedulerRegistry` as `schedule_jobs` answers it. */
@@ -19,8 +21,13 @@ export interface ScheduledJobModel {
   delayMs?: number;
   /** Cron: started and not stopped. Interval and timeout: not cleared, and a timeout not fired. */
   running?: boolean;
-  /** Cron: when it last fired, when known. */
-  lastRun?: string;
+  /** Cron: when it last fired, as the `CronJob` itself knows it. */
+  lastFiredAt?: string;
   /** Cron: when it fires next, only while it is running. */
   nextRun?: string;
+  /**
+   * With the `runs` group on: the latest run the inspector recorded of the decorated method (its
+   * outcome, when it threw, is only here and in `runs_list`).
+   */
+  lastRun?: LastRun;
 }

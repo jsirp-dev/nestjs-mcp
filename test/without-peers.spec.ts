@@ -58,11 +58,19 @@ class SchedulerRegistry {
   }
 }
 
-@Module({ providers: [EventEmitter2, SchedulerRegistry] })
+/** Carries the metadata the peers' decorators would write, so only the missing peers skip it. */
+@Injectable()
+class Jobs {
+  tick() {}
+}
+Reflect.defineMetadata('EVENT_LISTENER_METADATA', [{ event: 'thing' }], Jobs.prototype.tick);
+Reflect.defineMetadata('SCHEDULE_CRON_OPTIONS', { cronTime: '* * * * *' }, Jobs.prototype.tick);
+
+@Module({ providers: [EventEmitter2, SchedulerRegistry, Jobs] })
 class BareModule {}
 
 describe('without the optional peers', () => {
-  it('boots, registers no events_* or schedule_* tool and app_info says both are off', async () => {
+  it('boots, registers no events_*, schedule_* or runs tool and app_info says they are off', async () => {
     const inspectorPort = await freePort();
     const app = await NestFactory.create(
       {
@@ -85,12 +93,15 @@ describe('without the optional peers', () => {
       expect(names).toContain('app_info');
       expect(names.filter((name) => name.startsWith('events_'))).toEqual([]);
       expect(names.filter((name) => name.startsWith('schedule_'))).toEqual([]);
+      expect(names.filter((name) => name.startsWith('run'))).toEqual([]);
       const info = toolJson(await client.callTool({ name: 'app_info', arguments: {} })) as {
         tools: Record<string, boolean>;
       };
       expect(info.tools.events).toBe(false);
       expect(info.tools.schedule).toBe(false);
+      expect(info.tools.runs).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(app.get(EventEmitter2), 'emit')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(app.get(Jobs), 'tick')).toBe(false);
     } finally {
       await client.close();
       await app.close();

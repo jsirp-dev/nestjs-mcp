@@ -16,6 +16,7 @@ import {
   NEST_MCP_TOOL_CONTEXT,
 } from './constants.js';
 import { installEvents } from './events/install-events.js';
+import { installRuns } from './runs/install-runs.js';
 import { installSchedule } from './schedule/install-schedule.js';
 import { NestMcpBootstrap } from './nest-mcp.bootstrap.js';
 import {
@@ -150,10 +151,12 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
 
   /**
    * Installs request tracing when the `requests` group is on, the emission recorder when the
-   * `events` group is, and looks up the scheduler registry when the `schedule` group is. Nest calls `configure` before it builds the routes, and building them binds
-   * each exception filter's `catch` for good, so the enhancers are wrapped here rather than in a
-   * lifecycle hook; and it runs before every `onModuleInit` of the app, so the recorder sees the
-   * emissions of the app's own hooks.
+   * `events` group is, the job and listener wrappers when the `runs` group is, and looks up the
+   * scheduler registry when the `schedule` group is. Nest calls `configure` before it builds the
+   * routes, and building them binds each exception filter's `catch` for good, so the enhancers are
+   * wrapped here rather than in a lifecycle hook; and it runs before every `onModuleInit` of the
+   * app, so the recorder sees the emissions of the app's own hooks and the scheduler, which reads
+   * the job methods at its `onModuleInit`, binds the wrappers (ADR-0006).
    */
   configure(consumer: MiddlewareConsumer): void {
     if (!this.options.enabled || !this.context) return;
@@ -161,6 +164,9 @@ export class NestMcpModule extends ConfigurableModuleClass implements NestModule
       this.context.events = installEvents(this.modulesContainer, DEFAULT_EVENTS_BUFFER_SIZE);
     }
     if (this.options.tools.schedule) this.context.schedule = installSchedule(this.modulesContainer);
+    if (this.options.tools.runs) {
+      this.context.runs = installRuns(this.modulesContainer, this.options.runs.bufferSize);
+    }
     if (!this.options.tools.requests) return;
     this.context.traces = installRequestTracing({
       options: this.options.requests,

@@ -24,6 +24,7 @@ export interface LogsTailInput {
   source?: LogSource;
   sinceSeq?: number;
   requestId?: string;
+  runId?: string;
   scope?: 'instance' | 'app';
 }
 
@@ -74,6 +75,7 @@ export function logsTail(
       LOG_LEVELS.indexOf(entry.level) >= minRank &&
       (input.context === undefined || entry.context === input.context) &&
       (input.requestId === undefined || entry.requestId === input.requestId) &&
+      (input.runId === undefined || entry.runId === input.runId) &&
       (contexts === null || (entry.context !== null && contexts.has(entry.context))) &&
       (needle === undefined ||
         entry.message.toLowerCase().includes(needle) ||
@@ -114,7 +116,8 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
       "logger (pino, winston…), that logger's lines (source 'sink'), oldest first: seq, source, " +
       'timestamp, level, context, message and, when known, stack. Filter by exact level, minimum ' +
       'level, source, exact context, the requestId of the request it was written in (as ' +
-      'requests_list shows it; entries written outside a request have none) or a ' +
+      'requests_list shows it; entries written outside a request have none), the runId of the ' +
+      'job or listener run it was written in (as runs_list shows it) or a ' +
       'case-insensitive substring of the message. Pass the ' +
       'answered lastSeq as sinceSeq to read only what came after. A module-scoped instance keeps ' +
       "only entries whose context is a class in its scope; scope: 'app' lifts that. Without a sink, " +
@@ -147,6 +150,11 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
         .min(1)
         .optional()
         .describe('Only entries written while this request was traced (its id in requests_list)'),
+      runId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Only entries written during this job or listener run (its id in runs_list)'),
       scope: z
         .enum(['instance', 'app'])
         .optional()
