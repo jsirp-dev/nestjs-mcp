@@ -22,6 +22,16 @@ Everything a Nest app already has is a peer dependency: `@nestjs/common` and `@n
 `@nestjs/event-emitter` and `@nestjs/schedule` are optional peers: their tools appear only if your app
 uses them. The only runtime dependency is `@modelcontextprotocol/sdk`.
 
+The supported way to consume the package is the published npm package. Listing a checkout of this
+repository (a clone or a git submodule) as a workspace of a host monorepo is not supported: the repo
+keeps its own `yarn.lock`, which its CI and standalone development need, so Yarn treats that folder as
+a separate project and scripts run inside it fail until it gets its own install; and that install, or
+any workspace install, brings in the package's devDependencies, a second copy of Nest that the host's
+dependency injection does not recognise (`Nest can't resolve dependencies of the NestMcpModule`). The
+published tarball holds only `dist/`, this README, the changelog and the license, and npm never
+installs a package's devDependencies, so the app's own Nest is the only one. To try unreleased changes
+in an app, build here and install the result of `npm pack` in the app.
+
 ## Quick start
 
 ```ts

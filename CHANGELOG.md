@@ -13,6 +13,28 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### npm-only consumption, Nest dev ranges, `.turbo/` (tickets #15, #16, #17, 2026-10-25)
+
+#### Done
+
+- **#15:** the README (Install) says the package is consumed published on npm, and that listing a
+  checkout as a workspace of a host monorepo is unsupported, with the two reasons: the own `yarn.lock`
+  makes Yarn treat the folder as a separate project, and the devDependencies would bring a second Nest
+  that breaks the host's injection. `CLAUDE.md` (Local setup) no longer tells sessions to run the
+  scripts through a host's package manager; decision 16 of `00-overview.md` carries the same line. The
+  `yarn.lock` stays.
+- **#16:** `.turbo/` in `.gitignore`.
+- **#17:** the devDependency ranges of `@nestjs/common`, `@nestjs/core` and `@nestjs/platform-express`
+  go from `^11.1.0` to `^11.0.0`. `yarn.lock` only renames their descriptors: all three still resolve
+  to 11.2.8. The peers are unchanged.
+
+#### Hot decisions
+
+- **Documentation, not removal, closes #15**: the owner decided the package is consumed from npm,
+  whose tarball holds only `dist/`, README, CHANGELOG and LICENSE and never installs devDependencies,
+  so neither problem reaches a consumer. Dropping the lock would break `yarn install --immutable` in
+  CI and reproducible standalone development.
+
 ### Function middlewares named instead of Nest's random token (ticket #21, 2026-10-25)
 
 #### Done

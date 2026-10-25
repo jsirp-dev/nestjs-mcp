@@ -954,10 +954,10 @@ __metadata:
   resolution: "@jsirp/nestjs-mcp@workspace:."
   dependencies:
     "@modelcontextprotocol/sdk": "npm:^1.32.2"
-    "@nestjs/common": "npm:^11.1.0"
-    "@nestjs/core": "npm:^11.1.0"
+    "@nestjs/common": "npm:^11.0.0"
+    "@nestjs/core": "npm:^11.0.0"
     "@nestjs/event-emitter": "npm:^3.0.0"
-    "@nestjs/platform-express": "npm:^11.1.0"
+    "@nestjs/platform-express": "npm:^11.0.0"
     "@nestjs/schedule": "npm:^6.0.0"
     "@types/jest": "npm:^29.5.14"
     "@types/multer": "npm:^2.3.0"
@@ -1043,7 +1043,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/common@npm:^11.1.0":
+"@nestjs/common@npm:^11.0.0":
   version: 11.2.8
   resolution: "@nestjs/common@npm:11.2.8"
   dependencies:
@@ -1066,7 +1066,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/core@npm:^11.1.0":
+"@nestjs/core@npm:^11.0.0":
   version: 11.2.8
   resolution: "@nestjs/core@npm:11.2.8"
   dependencies:
@@ -1105,7 +1105,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/platform-express@npm:^11.1.0":
+"@nestjs/platform-express@npm:^11.0.0":
   version: 11.2.8
   resolution: "@nestjs/platform-express@npm:11.2.8"
   dependencies:

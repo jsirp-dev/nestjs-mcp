@@ -220,7 +220,8 @@ Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in 
 14. **Express verified; Fastify not supported in v1**, stated in the README with an issue to track it.
 15. **Name `@jsirp/nestjs-mcp`**, MIT. `nestjs-mcp` and `nestjs-devtools-mcp` are taken.
 16. **Own repository, embeddable as a submodule** (owner's decision, 2026-10-24): the package depends
-    on nothing in a host workspace, not even its shared lint or formatter configuration.
+    on nothing in a host workspace, not even its shared lint or formatter configuration. Hosts consume
+    it published on npm; listing the checkout as a host workspace is unsupported (tickets #15, #17).
 17. **Everything in English** from the first commit: code, docs, plan, logbook, glossary, ADRs
     (owner's decision, 2026-10-25).
 18. **Commits in English**, two per phase closure, launched by a person. Package commits happen in

@@ -84,9 +84,14 @@ If this checkout lives inside a host monorepo, that host has its own `CLAUDE.md`
 yarn install && yarn build && yarn test
 yarn lint && yarn type-check
 
-# Inside a host monorepo that lists this folder as a workspace, run the same scripts through the
-# host's package manager (its lockfile rules there).
+# Inside a host monorepo (as a submodule), run the same scripts from this folder: it is its own
+# Yarn project with its own yarn.lock, never a workspace of the host.
 ```
+
+Hosts consume the package published on npm. Listing this folder as a host workspace is unsupported
+(README, Install): the own `yarn.lock` makes Yarn treat it as a separate project, and the
+devDependencies would put a second copy of Nest in the host and break injection. To try unreleased
+changes in a host app, install the tarball of `npm pack`.
 
 The pre-commit hook (`.husky/pre-commit`) only checks, never writes: `format-check`, `lint`,
 `type-check`, `build`.
