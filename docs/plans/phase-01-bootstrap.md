@@ -18,11 +18,13 @@ instance's scope kind.
 
 ## Prerequisites
 
-- [ ] The repo initialised (branch `main`, remote `git@github.com:jsirp-dev/nestjs-mcp.git`) with the
+- [x] The repo initialised (branch `main`, remote `git@github.com:jsirp-dev/nestjs-mcp.git`) with the
       plan committed.
-- [ ] `CLAUDE.md`, `00-overview.md`, `GLOSSARY.md` and the ADRs read.
+- [x] `CLAUDE.md`, `00-overview.md`, `GLOSSARY.md` and the ADRs read.
 - [ ] If this checkout lives inside a host monorepo as a workspace, the host's install and build green
       before touching anything; the host's own conventions apply to the host's files only.
+      *Not run: the package has its own `yarn.lock`, so `yarn install` here resolves to this
+      directory and leaves the host's lockfile and `node_modules` untouched.*
 
 ## Closed decisions for this phase
 
@@ -163,13 +165,13 @@ change; that is the host's commit, on its side.
 
 ## Verification / definition of done
 
-- [ ] `yarn install` changes nothing but `yarn.lock`.
-- [ ] `yarn build` produces `dist/index.js`, `dist/index.cjs`, `dist/index.d.ts`.
-- [ ] `yarn test` green with `test/transport.spec.ts`.
-- [ ] `yarn lint` and `yarn type-check` green; a file importing a package absent from `package.json`
+- [x] `yarn install` changes nothing but `yarn.lock`.
+- [x] `yarn build` produces `dist/index.js`, `dist/index.cjs`, `dist/index.d.ts`.
+- [x] `yarn test` green with `test/transport.spec.ts`.
+- [x] `yarn lint` and `yarn type-check` green; a file importing a package absent from `package.json`
       fails lint with `import/no-extraneous-dependencies` (checked and reverted).
-- [ ] `sh .husky/pre-commit` passes by hand.
-- [ ] `git grep -n -i 'pino\|orpc\|mongo' src test` returns nothing: no assumptions about a host.
+- [x] `sh .husky/pre-commit` passes by hand.
+- [x] `git grep -n -i 'pino\|orpc\|mongo' src test` returns nothing: no assumptions about a host.
 
 ## Likely stumbles
 

@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+yarn.lock
+.yarn
+.claude
+skills-lock.json
+# Hand-wrapped prose; tables are aligned by hand.
+*.md

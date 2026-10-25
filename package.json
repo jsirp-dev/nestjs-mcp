@@ -1,0 +1,108 @@
+{
+  "name": "@jsirp/nestjs-mcp",
+  "version": "0.0.0",
+  "description": "Runtime MCP inspector embedded in your NestJS app, for coding agents: module graph, routes and enhancers, logs, request traces, events and scheduled jobs.",
+  "license": "MIT",
+  "author": "Jorge Mañanes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jsirp-dev/nestjs-mcp.git"
+  },
+  "bugs": "https://github.com/jsirp-dev/nestjs-mcp/issues",
+  "homepage": "https://github.com/jsirp-dev/nestjs-mcp#readme",
+  "keywords": [
+    "nestjs",
+    "mcp",
+    "model-context-protocol",
+    "inspector",
+    "devtools",
+    "coding-agent"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@4.3.1",
+  "volta": {
+    "node": "20.19.4",
+    "yarn": "4.3.1"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "format": "prettier --write .",
+    "format-check": "prettier --check .",
+    "lint": "eslint --max-warnings 0 --ext .ts,.cjs .",
+    "type-check": "tsc --noEmit",
+    "pretest": "yarn build",
+    "test": "jest",
+    "postinstall": "test -d .git && husky || true"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  },
+  "peerDependencies": {
+    "@nestjs/common": ">=10 <12",
+    "@nestjs/core": ">=10 <12",
+    "@nestjs/event-emitter": ">=2",
+    "@nestjs/schedule": ">=4",
+    "reflect-metadata": "^0.1.13 || ^0.2.0",
+    "rxjs": "^7.0.0",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/event-emitter": {
+      "optional": true
+    },
+    "@nestjs/schedule": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.0",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.32.0",
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "prettier": "^3.6.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ts-jest": "^29.4.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "zod": "^3.25.76"
+  }
+}

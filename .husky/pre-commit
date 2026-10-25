@@ -1,0 +1,2 @@
+# Check-only: never writes. Fix what it reports and commit again.
+yarn format-check && yarn lint && yarn type-check && yarn build
