@@ -13,6 +13,47 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Unnamed parameter pipes keep their level in traces (ticket #20, 2026-10-25)
+
+#### Done
+
+- A pipe step carries the `param` `route_get` shows for its argument: the name Nest passes in
+  `ArgumentMetadata.data` (`'id'`), or `#<index>` for an argument without a name
+  (`@Param(Pipe) params`), so `levelOf` matches it and the step has its `level`. Before, the step of
+  an unnamed argument had no `param` and no `level`.
+- One source for both: `src/routes/route-arguments.ts` reads a handler's route arguments and names
+  them (`routeArguments`, `argumentName`) for `route_get`, and finds the argument a pipe call runs
+  on (`argumentOf`) for the trace. The trace keeps the controller class and handler key it
+  identified (`ActiveTrace.target`, internal) to look them up.
+- README: the `pipe` step's `param`.
+
+#### Hot decisions
+
+- **Nest does not pass the argument's index to a pipe**, so the argument is found by the `type` and
+  `data` the pipe receives, matched against the paramtype in each route-arguments key (`body` 3,
+  `query` 4, `param` 5; `custom` for files, the raw body and custom decorators). Two candidates
+  (`@Body() a, @Body() b`) are told apart by whose own pipes include the running pipe; still
+  ambiguous, the step has no `param` rather than a guess.
+- **Every pipe on an unnamed argument gets its `#n`**, global and `@UsePipes` ones too, as named
+  arguments already gave them `'id'`: `param` says which argument the pipe ran on. Their `level`
+  is unchanged (they match the chain's entry without `param`).
+
+#### Notes for the next session
+
+- Pre-existing, not changed: a pipe that is both global and a parameter pipe of the same argument
+  (`useGlobalPipes(new ValidationPipe())` and `@Body(ValidationPipe)`) gives both steps the same
+  `name` and `param`, so both read `level: 'method'`.
+- `inlineInstances` in `src/requests/wrap-enhancers.ts` still reads the route-arguments metadata on
+  its own; it could use `routeArguments`.
+
+#### Verification
+
+`WrappedModule` gains `GET /wrapped/piped/:id` with `@Param(UpperPipe)`; `test/requests.spec.ts`
+checks that `route_get` shows `param: "#0"` and the trace step carries `param: "#0"` and
+`level: 'method'` (red without the fix: neither field). `test/route-matching.spec.ts` covers argument
+naming, the type and data match and the ambiguous case. `yarn format-check`, `yarn lint`,
+`yarn type-check`, `yarn build`, `yarn test` green.
+
 ### Wrapped handlers keep their route in traces (ticket #19, 2026-10-25)
 
 #### Done

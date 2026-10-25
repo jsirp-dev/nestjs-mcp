@@ -406,6 +406,24 @@ describe('requests tools', () => {
         expect(trace.steps.map(shape)).toEqual([`handler:${controller}.inherited:ok`]);
       }
     });
+
+    it('gives the pipe of an unnamed argument the param route_get shows, and its level', async () => {
+      expect((await send('/wrapped/piped/abc', 'piped')).status).toBe(200);
+      const { json: route } = await call(client, 'route_get', {
+        method: 'GET',
+        path: '/wrapped/piped/:id',
+      });
+      expect(route.route.pipes).toEqual([{ name: 'UpperPipe', level: 'method', param: '#0' }]);
+
+      const trace = await traceOf(client, 'piped');
+      expect(trace.steps.find((step: Json) => step.kind === 'pipe')).toMatchObject({
+        name: 'UpperPipe',
+        param: '#0',
+        paramType: 'param',
+        level: 'method',
+        outcome: 'ok',
+      });
+    });
   });
 
   describe('with tools.requests off', () => {

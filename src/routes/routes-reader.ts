@@ -1,4 +1,3 @@
-import { ROUTE_ARGS_METADATA } from '../constants.js';
 import { tokenText, type GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js';
 import { isGraphUnavailable, type GraphClass, type GraphUnavailable } from '../graph/model.js';
 import { inScope, type InstanceScope } from '../instance/scope.js';
@@ -7,6 +6,7 @@ import { rawPath, routeVersion, type PathSettings, type VersionValue } from './f
 import { INSPECTOR_INTERCEPTOR } from '../requests/handler.interceptor.js';
 import { TRACE_MIDDLEWARE_NAME } from '../requests/trace.middleware.js';
 import type { Enhancer, RouteModel } from './model.js';
+import { argumentName, routeArguments } from './route-arguments.js';
 
 type EnhancerKind = 'guard' | 'interceptor' | 'pipe' | 'filter';
 
@@ -22,12 +22,6 @@ interface RawEntrypoint {
     controllerVersion?: VersionValue;
     version?: VersionValue;
   };
-}
-
-interface RouteArgument {
-  index: number;
-  data?: unknown;
-  pipes?: unknown[];
 }
 
 /** A class by its name, an instance by its constructor's, a request-scoped wrapper by its class. */
@@ -57,22 +51,15 @@ function globals(config: ApplicationConfigLike, kind: EnhancerKind): Enhancer[] 
     .map((value) => ({ name: enhancerName(value), level: 'global' }));
 }
 
-/** Parameter pipes of a handler, by argument index, named after the argument (`'id'`). */
+/** Parameter pipes of a handler, by argument index, named after the argument (`'id'`, `#0`). */
 function parameterPipes(controller: unknown, handler: string): Enhancer[] {
-  if (typeof controller !== 'function') return [];
-  const metadata = (Reflect.getMetadata(ROUTE_ARGS_METADATA, controller, handler) ?? {}) as Record<
-    string,
-    RouteArgument
-  >;
-  return Object.values(metadata)
-    .sort((a, b) => a.index - b.index)
-    .flatMap((argument) =>
-      (argument.pipes ?? []).map((pipe) => ({
-        name: enhancerName(pipe),
-        level: 'method' as const,
-        param: typeof argument.data === 'string' ? argument.data : `#${argument.index}`,
-      })),
-    );
+  return routeArguments(controller, handler).flatMap((argument) =>
+    (argument.pipes ?? []).map((pipe) => ({
+      name: enhancerName(pipe),
+      level: 'method' as const,
+      param: argumentName(argument),
+    })),
+  );
 }
 
 /** Removes one occurrence of each name in `names` from `enhancers`. */

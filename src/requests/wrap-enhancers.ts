@@ -7,6 +7,7 @@ import {
   PIPES_METADATA,
   ROUTE_ARGS_METADATA,
 } from '../constants.js';
+import { argumentName, argumentOf } from '../routes/route-arguments.js';
 import type { TraceStep, TraceStepOutcome } from './model.js';
 import {
   current,
@@ -253,11 +254,27 @@ function wrapInterceptor(original: AnyFunction, name: string): AnyFunction {
   };
 }
 
+/**
+ * The argument a pipe runs on, named as `route_get` names it: the `data` Nest passes (`'id'`), or
+ * `#<index>` for an argument without a name, found in the handler's route arguments.
+ */
+function paramOf(
+  active: ActiveTrace,
+  pipe: unknown,
+  metadata: { type?: unknown; data?: unknown } | undefined,
+): string | undefined {
+  if (typeof metadata?.data === 'string') return metadata.data;
+  if (!metadata || !active.target) return undefined;
+  const argument = argumentOf(active.target.controller, active.target.handler, metadata, pipe);
+  return argument ? argumentName(argument) : undefined;
+}
+
 function wrapPipe(original: AnyFunction, name: string): AnyFunction {
   return function transform(this: unknown, ...args: unknown[]) {
     const active = current();
     if (!active) return original.apply(this, args);
     const metadata = args[1] as { type?: unknown; data?: unknown } | undefined;
+    const param = paramOf(active, this, metadata);
     const start = performance.now();
     const settle = (outcome: TraceStepOutcome, error?: unknown) =>
       record(
@@ -265,7 +282,7 @@ function wrapPipe(original: AnyFunction, name: string): AnyFunction {
         timed(active, start, {
           kind: 'pipe',
           name,
-          ...(typeof metadata?.data === 'string' ? { param: metadata.data } : {}),
+          ...(param === undefined ? {} : { param }),
           ...(typeof metadata?.type === 'string' ? { paramType: metadata.type } : {}),
           outcome,
           ...(error === undefined ? {} : { error: describeError(error) }),

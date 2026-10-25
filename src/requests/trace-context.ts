@@ -8,6 +8,8 @@ export interface ActiveTrace {
   trace: RequestTrace;
   /** `performance.now()` when the trace started. */
   t0: number;
+  /** The controller class and handler key the request reached, once identified. */
+  target?: { controller: object; handler: string };
 }
 
 /** Steps kept per trace; a request that records more keeps the first ones and counts the rest. */
@@ -77,8 +79,12 @@ export function identify(active: ActiveTrace, context: unknown): void {
   if (typeof controller?.name === 'string') trace.controller = controller.name;
   // By key, as the route is: a decorator that replaced the method leaves a wrapper named `''`.
   const key = handlerKey(controller, handler);
-  if (key !== undefined) trace.handler = key;
-  else if (typeof handler?.name === 'string') trace.handler = handler.name;
+  if (key !== undefined) {
+    trace.handler = key;
+    active.target = { controller: controller!, handler: key };
+  } else if (typeof handler?.name === 'string') {
+    trace.handler = handler.name;
+  }
   const request = ctx.switchToHttp?.().getRequest() as { route?: { path?: unknown } } | undefined;
   if (typeof request?.route?.path === 'string') trace.route = request.route.path;
 }

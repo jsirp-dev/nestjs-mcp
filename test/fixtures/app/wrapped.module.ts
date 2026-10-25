@@ -6,6 +6,8 @@ import {
   Injectable,
   Module,
   NestInterceptor,
+  Param,
+  PipeTransform,
   Scope,
   UseGuards,
   UseInterceptors,
@@ -42,6 +44,21 @@ export class WrappedScopedInterceptor implements NestInterceptor {
   }
 }
 
+/** Upper-cases every string value of what it gets. */
+@Injectable()
+export class UpperPipe implements PipeTransform {
+  transform(value: unknown): unknown {
+    if (typeof value === 'string') return value.toUpperCase();
+    if (typeof value !== 'object' || value === null) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        typeof item === 'string' ? item.toUpperCase() : item,
+      ]),
+    );
+  }
+}
+
 @Controller('wrapped')
 @UseGuards(WrappedGuard)
 export class WrappedController {
@@ -50,6 +67,12 @@ export class WrappedController {
   @Wrap()
   wrapped(): { ok: 1 } {
     return { ok: 1 };
+  }
+
+  /** A parameter pipe on an argument without a name: the route shows it as `#0`. */
+  @Get('piped/:id')
+  piped(@Param(UpperPipe) params: { id: string }): { id: string } {
+    return params;
   }
 }
 
@@ -68,6 +91,6 @@ export class DerivedAController extends WrappedBase {}
 @Controller('derived-b')
 export class DerivedBController extends WrappedBase {}
 
-/** Handlers replaced by decorators. Imported when asked for. */
+/** Handlers replaced by decorators and unnamed parameter pipes. Imported when asked for. */
 @Module({ controllers: [WrappedController, DerivedAController, DerivedBController] })
 export class WrappedModule {}

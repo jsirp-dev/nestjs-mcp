@@ -40,7 +40,7 @@ export interface FixtureAppOptions {
   requestScoped?: boolean;
   /** Import `HealthModule`, a controller outside `CatsModule`. */
   health?: boolean;
-  /** Import `WrappedModule`: handlers replaced by decorators. */
+  /** Import `WrappedModule`: handlers replaced by decorators, an unnamed parameter pipe. */
   wrapped?: boolean;
   /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
   events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];

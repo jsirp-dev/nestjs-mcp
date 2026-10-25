@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { argumentName, argumentOf, routeArguments } from '../src/routes/route-arguments.js';
 import { handlerKey } from '../src/support/handler-key.js';
 
 function wrapper(): (...args: unknown[]) => unknown {
@@ -54,5 +56,38 @@ describe('handlerKey', () => {
     expect(getter).not.toHaveBeenCalled();
     expect(handlerKey(undefined, wrapper())).toBeUndefined();
     expect(handlerKey(C, undefined)).toBeUndefined();
+  });
+});
+
+describe('route arguments', () => {
+  class UpperPipe {
+    transform(value: unknown): unknown {
+      return value;
+    }
+  }
+
+  class C {
+    one(
+      @Param('id', ParseIntPipe) _id: number,
+      @Param(UpperPipe) _params: object,
+      @Query() _query: object,
+    ): void {}
+    two(@Body(UpperPipe) _a: object, @Body() _b: object, @Body() _c: object): void {}
+  }
+
+  it('names each argument by its data, or #index without one', () => {
+    expect(routeArguments(C, 'one').map(argumentName)).toEqual(['id', '#1', '#2']);
+  });
+
+  it('finds the argument a pipe call runs on from its type and data', () => {
+    const pipe = new UpperPipe();
+    expect(argumentOf(C, 'one', { type: 'param', data: undefined }, pipe)?.index).toBe(1);
+    expect(argumentOf(C, 'one', { type: 'query', data: undefined }, pipe)?.index).toBe(2);
+    expect(argumentOf(C, 'one', { type: 'body', data: undefined }, pipe)).toBeUndefined();
+  });
+
+  it("tells same-typed arguments apart by their own pipes, and gives up when it can't", () => {
+    expect(argumentOf(C, 'two', { type: 'body' }, new UpperPipe())?.index).toBe(0);
+    expect(argumentOf(C, 'two', { type: 'body' }, new ParseIntPipe())).toBeUndefined();
   });
 });
