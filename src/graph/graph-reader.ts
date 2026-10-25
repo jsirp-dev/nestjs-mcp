@@ -14,6 +14,18 @@ export interface SerializedGraphLike {
   toJSON(): { nodes?: Record<string, unknown>; edges?: Record<string, unknown> };
 }
 
+/** One of Nest's `Module`s, as the reader needs it: its graph id and its imports, in order. */
+export interface ModuleImportsLike {
+  /** The same id the serialized graph gives the module's node. */
+  id?: string;
+  imports?: Iterable<{ id?: string }>;
+}
+
+/** What the reader needs from Nest's `ModulesContainer`. Duck-typed on purpose. */
+export interface ModulesImportsLike {
+  values(): Iterable<ModuleImportsLike>;
+}
+
 interface RawNode {
   id: string;
   label: unknown;
@@ -71,11 +83,43 @@ function moduleNames(nodes: RawNode[]): Map<string, string> {
 }
 
 /**
+ * Per module id, the ids of the global modules Nest linked to it on its own. The serialized graph
+ * does not tell them apart from declared imports, but a module's imports keep the order Nest added
+ * them in: first what the module declares, while scanning; then, once every module is scanned,
+ * every global module it does not have yet, `InternalCoreModule` first (Nest registers it before
+ * scanning the app, and no app module can declare it). So the links from `InternalCoreModule` on
+ * are implicit, and a global module the module declares stays before it, a declared import.
+ */
+function implicitGlobalLinks(
+  container: ModulesImportsLike | undefined,
+  modules: Record<string, GraphModule>,
+): Map<string, Set<string>> {
+  const links = new Map<string, Set<string>>();
+  for (const module of container?.values() ?? []) {
+    if (module.id === undefined || !(module.id in modules)) continue;
+    const implicit = new Set<string>();
+    let bound = false;
+    for (const imported of module.imports ?? []) {
+      const target = imported.id === undefined ? undefined : modules[imported.id];
+      if (!target) continue;
+      bound ||= target.internal && target.global;
+      if (bound && target.global) implicit.add(target.id);
+    }
+    links.set(module.id, implicit);
+  }
+  return links;
+}
+
+/**
  * Reads Nest's serialized graph and maps it to the package's model. Reads on every call: the
  * graph is complete only after `app.init()`, and `toJSON()` is a cheap shallow copy.
  */
 export class GraphReader {
-  constructor(private readonly serializedGraph: SerializedGraphLike | undefined) {}
+  constructor(
+    private readonly serializedGraph: SerializedGraphLike | undefined,
+    /** Without it, every module edge counts as declared. */
+    private readonly modulesContainer?: ModulesImportsLike,
+  ) {}
 
   /**
    * The graph id of the module that declares a provider under exactly this token (compared by
@@ -103,6 +147,7 @@ export class GraphReader {
         dynamic: node.metadata.dynamic === true,
         internal: node.metadata.internal === true,
         imports: [],
+        globals: [],
         exports: [],
         providers: [],
         controllers: [],
@@ -153,6 +198,7 @@ export class GraphReader {
       });
     }
 
+    const implicitLinks = implicitGlobalLinks(this.modulesContainer, modules);
     const edges: GraphEdge[] = [];
     for (const raw of Object.values(json?.edges ?? {}) as RawEdge[]) {
       const metadata = raw.metadata;
@@ -160,13 +206,17 @@ export class GraphReader {
         const from = modules[raw.source];
         const to = modules[raw.target];
         if (!from || !to) continue;
-        if (!from.imports.includes(to.id)) from.imports.push(to.id);
-        edges.push({
+        const implicit = implicitLinks.get(from.id)?.has(to.id) === true;
+        const list = implicit ? from.globals : from.imports;
+        if (!list.includes(to.id)) list.push(to.id);
+        const edge: GraphEdge = {
           from: from.id,
           to: to.id,
           kind: 'module-to-module',
           internal: from.internal || to.internal,
-        });
+        };
+        if (implicit) edge.implicit = true;
+        edges.push(edge);
       } else if (metadata.type === 'class-to-class') {
         const from = classes[raw.source];
         const to = classes[raw.target];

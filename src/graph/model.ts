@@ -15,8 +15,13 @@ export interface GraphModule {
   global: boolean;
   dynamic: boolean;
   internal: boolean;
-  /** Ids of the modules this one imports. */
+  /** Ids of the modules this one declares in its `imports`. */
   imports: string[];
+  /**
+   * Ids of the global modules Nest linked to this one without its declaring them: every module
+   * gets every global module (and `InternalCoreModule`) this way.
+   */
+  globals: string[];
   /** Ids of the classes this module exports. */
   exports: string[];
   /** Ids of the classes of kind `provider` declared in this module. */
@@ -57,6 +62,8 @@ export interface GraphEdge {
   to: string;
   kind: 'module-to-module' | 'class-to-class';
   internal: boolean;
+  /** Module edges: Nest's link to a global module the source does not declare. */
+  implicit?: true;
   /** Class edges: how the dependency arrives. `decorator` attaches an enhancer. */
   injection?: 'constructor' | 'property' | 'decorator';
   /** Class edges: the constructor index or property key, as text. */

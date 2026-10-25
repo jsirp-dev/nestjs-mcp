@@ -39,7 +39,7 @@ import {
 } from './requests/trace.middleware.js';
 import type { ModulesContainerLike } from './requests/wrap-enhancers.js';
 import { ToolRegistry } from './tools/registry.js';
-import type { SerializedGraphLike } from './graph/graph-reader.js';
+import type { ModulesImportsLike, SerializedGraphLike } from './graph/graph-reader.js';
 import {
   createToolContext,
   type ApplicationConfigLike,
@@ -118,8 +118,21 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
       options: ResolvedNestMcpOptions,
       applicationConfig: ApplicationConfigLike,
       serializedGraph: SerializedGraphLike | undefined,
-    ) => createToolContext(options, applicationConfig, serializedGraph, instanceToken),
-    inject: [NEST_MCP_OPTIONS, ApplicationConfig, { token: SerializedGraph, optional: true }],
+      modulesContainer: ModulesImportsLike,
+    ) =>
+      createToolContext(
+        options,
+        applicationConfig,
+        serializedGraph,
+        modulesContainer,
+        instanceToken,
+      ),
+    inject: [
+      NEST_MCP_OPTIONS,
+      ApplicationConfig,
+      { token: SerializedGraph, optional: true },
+      ModulesContainer,
+    ],
   };
 
   return {

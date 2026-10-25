@@ -13,6 +13,62 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Implicit global-module links out of `imports` and cycles (ticket #14, 2026-10-25)
+
+#### Done
+
+- `graph_module.imports` and `graph_modules[].imports` list only what a module declares. The links
+  Nest adds from every module to every global module go to a new `graph_module.globals`
+  (`InternalCoreModule` among them under `includeInternal: true`); a global module the module does
+  declare stays in `imports`. `importedBy` lists the modules that declare the import.
+- `graph_cycles` leaves the implicit links out, so global modules no longer form one large "module
+  cycle" with whatever imports them; `forwardRef` cycles are still reported.
+- The model: `GraphModule.globals`, and `implicit: true` on those `module-to-module` edges.
+  `GraphReader` takes the `ModulesContainer` as a second source (the tool context injects it).
+- README (graph tools table and notes, the `forFeature` scope paragraph), `GLOSSARY.md` (*scope*).
+
+#### Hot decisions
+
+- **How implicit links are told apart**: the serialized graph does not mark them (Nest 10.4.22 and
+  11.2.8 checked: the edge metadata is only `type` and both module names), and the edges come out of
+  `toJSON()` in key order, not insertion order. A module's `imports` set in the `ModulesContainer`
+  does keep insertion order: first what the module declares, while scanning; then, from
+  `bindGlobalScope`, every global module it lacks, `InternalCoreModule` always first (Nest
+  registers it before scanning the app, and no app module declares it). So the links from
+  `InternalCoreModule` on are implicit. A declared global module is already in the set by then, so
+  it keeps its place and counts as declared. Same order in both majors. Without the container,
+  every edge would count as declared, as before.
+- **The `forFeature` scope is unchanged** (ticket #4): it still takes in every global module and
+  what each imports, now by following `imports` and `globals`. A module can inject what a global
+  module exports without declaring it, so those providers are part of what it sees. Importers of
+  the instance are still found by declared imports only.
+- **`globals` only in `graph_module`**, not in each `graph_modules` entry: it is the same list for
+  almost every module and would repeat it for each.
+
+#### Stumbles and resolutions
+
+- **The `ModulesContainer` member of the reported cycle was not reproduced**: module cycles only
+  ever take nodes of type `module`, and neither the fixture nor a probe app with `DiscoveryModule`,
+  `EventEmitterModule` and `ScheduleModule` gives a module node with that label. With the implicit
+  links out, the cycle it was part of cannot form; a test checks that every cycle member is a module
+  `graph_modules` lists.
+
+#### Verification
+
+`test/global-imports.spec.ts` (5 tests, fixture `globals.module.ts`: `GlobalAModule` imports
+`GlobalBModule`, both `@Global()`; `FeatureModule` imports neither; `DeclaringModule` declares
+`GlobalBModule`; `LoopAModule` ↔ `LoopBModule` by `forwardRef`; with `EventEmitterModule` and
+`ScheduleModule`): `FeatureModule` has `imports: []` and the four globals in `globals`; `GlobalAModule`
+has `imports: ['GlobalBModule']`; `DeclaringModule` keeps `GlobalBModule` in `imports`;
+`InternalCoreModule` is in `globals` with `includeInternal`; `graph_cycles` gives only
+`[LoopAModule, LoopBModule]`; a `forFeature` instance in `FeatureModule` keeps both globals in its
+scope; all five were red before the change. `test/scope.spec.ts` gains a test for the closure
+through `globals`; removing `globals` from the closure turns it and the `forFeature` test red.
+`test/graph.spec.ts`: `CatsModule` no longer lists `InternalCoreModule` in `imports`. A repro script on `dist/index.cjs` (the issue's two globals plus a feature) gives the same answers
+on Nest 11.2.8 and 10.4.22. `yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`,
+`yarn test` (26 suites / 302 tests) green on Nest 11.2.8 and on Nest 10.4.22 (scratch copy), Node
+20.19 and 22.18.
+
 ### Local variables at the throw, under `debug` (ticket #26, 2026-10-25)
 
 #### Done

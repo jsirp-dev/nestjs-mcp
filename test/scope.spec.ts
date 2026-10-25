@@ -1,7 +1,12 @@
 import type { GraphModel, GraphModule } from '../src/graph/model.js';
 import { describeScope, inScope, resolveScope } from '../src/instance/scope.js';
 
-function module(id: string, imports: string[] = [], internal = false): GraphModule {
+function module(
+  id: string,
+  imports: string[] = [],
+  internal = false,
+  globals: string[] = [],
+): GraphModule {
   return {
     id,
     name: id.toUpperCase(),
@@ -9,6 +14,7 @@ function module(id: string, imports: string[] = [], internal = false): GraphModu
     dynamic: false,
     internal,
     imports,
+    globals,
     exports: [],
     providers: [],
     controllers: [],
@@ -57,6 +63,18 @@ describe('resolveScope', () => {
       kind: 'module',
       module: 'CATS',
       modules: new Set(['CATS', 'OWNERS', 'SHARED', 'OTHER']),
+    });
+  });
+
+  it('follows implicit links to global modules, but finds importers by declared imports only', () => {
+    const graph = model();
+    graph.modules.config = module('config', [], false, ['core']);
+    graph.modules.cats!.globals.push('config');
+    graph.modules.other!.globals.push('inspector');
+    expect(resolveScope(graph, 'inspector')).toEqual({
+      kind: 'module',
+      module: 'CATS',
+      modules: new Set(['CATS', 'OWNERS', 'SHARED', 'CONFIG']),
     });
   });
 });

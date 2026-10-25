@@ -25,6 +25,9 @@ export type AnswerScope =
 /**
  * The closure of the modules that import `instanceModuleId`: each importer and every module
  * reachable through imports, excluding Nest's internal modules and the instance's own module.
+ * Implicit links to global modules count as imports here: a module can inject what a global module
+ * exports without declaring it, so what it can reach includes them. An importer, though, is a
+ * module that declares the instance.
  * Several importers (one `forFeature` definition imported twice) join their closures; `module`
  * names the first in graph order.
  */
@@ -47,7 +50,7 @@ export function resolveScope(
     const module = graph.modules[id];
     if (!module || module.internal || id === instanceModuleId || reached.has(id)) continue;
     reached.add(id);
-    pending.push(...module.imports);
+    pending.push(...module.imports, ...module.globals);
   }
   return {
     kind: 'module',

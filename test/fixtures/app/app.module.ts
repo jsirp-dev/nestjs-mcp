@@ -10,6 +10,7 @@ import {
 import { CatsModule } from './cats/cats.module.js';
 import { FailingModule } from './failing.module.js';
 import { AppGuard } from './global.guards.js';
+import { globalsFixture } from './globals.module.js';
 import { HealthModule } from './health.module.js';
 import { LoggedModule } from './logged.module.js';
 import { TraceModule } from './trace.middleware.js';
@@ -58,6 +59,13 @@ export interface FixtureAppOptions {
   events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];
   /** Import `ScheduleModule.forRoot`, which schedules the fixture's decorated jobs. */
   schedule?: boolean;
+  /**
+   * Import two `@Global()` modules (`GlobalAModule` imports `GlobalBModule`), `FeatureModule`
+   * (imports neither), `DeclaringModule` (declares `GlobalBModule`) and a `forwardRef` cycle.
+   */
+  globals?: boolean;
+  /** With `globals`, mount a `forFeature` instance inside `FeatureModule`. */
+  featureInspector?: boolean;
 }
 
 @Module({})
@@ -96,6 +104,7 @@ export class AppModule {
           ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]
           : []),
         ...(options.schedule ? [ScheduleModule.forRoot()] : []),
+        ...(options.globals ? globalsFixture(options) : []),
       ],
       providers: options.appGuard ? [{ provide: APP_GUARD, useClass: AppGuard }] : [],
     };

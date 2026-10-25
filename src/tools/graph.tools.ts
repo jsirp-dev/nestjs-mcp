@@ -27,7 +27,10 @@ export interface GraphModuleDetail {
   name: string;
   global: boolean;
   dynamic: boolean;
+  /** What the module declares in its `imports`. */
   imports: string[];
+  /** The global modules Nest linked to it without its declaring them. */
+  globals: string[];
   exports: string[];
   providers: Array<{ token: string; scope: ProviderScope; exported: boolean }>;
   controllers: string[];
@@ -206,6 +209,7 @@ function graphModule(view: GraphView, name: string): GraphModuleDetail {
     global: module.global,
     dynamic: module.dynamic,
     imports: view.moduleNames(module.imports),
+    globals: view.moduleNames(module.globals),
     exports: view.classNames(module.exports),
     providers: providers.map((entry) => ({
       token: entry.name,
@@ -283,6 +287,8 @@ function graphCycles(view: GraphView): GraphCycle[] {
       .filter(
         (edge) =>
           edge.kind === 'module-to-module' &&
+          // Nest links every module to every global one, so these always close a loop.
+          edge.implicit !== true &&
           visibleModules.has(edge.from) &&
           visibleModules.has(edge.to),
       )

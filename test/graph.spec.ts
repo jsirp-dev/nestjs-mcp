@@ -80,7 +80,12 @@ describe('graph tools', () => {
       expect(internal.json.modules.map((module: Json) => module.name)).toContain(
         'InternalCoreModule',
       );
-      expect(cats.imports).toEqual(expect.arrayContaining(['InternalCoreModule', 'OwnersModule']));
+      expect(cats.imports).toEqual(['OwnersModule']);
+      const catsDetail = await call(client, 'graph_module', {
+        name: 'CatsModule',
+        includeInternal: true,
+      });
+      expect(catsDetail.json.module.globals).toEqual(['InternalCoreModule']);
     });
 
     it('describes one module: imports, exports, providers, controllers and importers', async () => {
@@ -93,6 +98,7 @@ describe('graph tools', () => {
           global: false,
           dynamic: true,
           imports: ['OwnersModule'],
+          globals: [],
           exports: [],
           providers: [{ token: 'CatsService', scope: 'DEFAULT', exported: false }],
           controllers: ['CatsController'],

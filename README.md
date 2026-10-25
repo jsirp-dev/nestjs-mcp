@@ -62,7 +62,9 @@ imports. `path` is required. Any number of instances may coexist, each with its 
 The scope is resolved from the serialized graph at the first tool call, so it needs `snapshot: true`
 too: `app_info.scope` then reads `{ "kind": "module", "module": "CatsModule" }`. Without `snapshot`, it
 reads `{ "kind": "module", "module": null, "error": "scope_unresolved", "fallback": "app" }`. The
-closure leaves out Nest's internal modules and the instance's own module.
+closure leaves out Nest's internal modules and the instance's own module, and takes in every global
+module (`@Global()`, `isGlobal: true`) and what it imports: the module can inject what they export
+without declaring them.
 
 ```ts
 @Module({
@@ -175,16 +177,20 @@ only the modules in its closure, and the providers, dependencies and cycles amon
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `graph_modules` | `includeInternal?` | Each module: `global`, `dynamic`, provider and controller counts, `imports` |
-| `graph_module` | `name`, `includeInternal?` | Imports, exports, providers (`token`, `scope`, `exported`), controllers, `importedBy` |
+| `graph_modules` | `includeInternal?` | Each module: `global`, `dynamic`, provider and controller counts, `imports` (declared) |
+| `graph_module` | `name`, `includeInternal?` | `imports` (declared), `globals` (linked by Nest), exports, providers (`token`, `scope`, `exported`), controllers, `importedBy` (modules that declare it) |
 | `graph_providers` | `filter?`, `module?`, `scope?`, `includeInternal?` | Providers and injectables; enhancers carry `subtype` (`guard`, `pipe`, …) and, when registered globally, `global: true` |
 | `graph_provider` | `token`, `module?`, `includeInternal?` | Module, injection scope, `dependsOn`, `dependents`, `initTimeMs` |
-| `graph_cycles` | — | `cycles`: module import cycles and class injection cycles; `[]` when there are none |
+| `graph_cycles` | — | `cycles`: module import cycles (declared imports only) and class injection cycles; `[]` when there are none |
 
 - Tokens are text: a class by its name, a string or symbol token by its description. Instances are
   never returned.
 - Nest's own modules and providers (`InternalCoreModule`, `ModuleRef`, `ApplicationConfig`, …) are
   hidden unless `includeInternal: true`.
+- `imports` is what a module declares. Nest also links every module to every global module, and
+  those links go to `globals` (with `InternalCoreModule` under `includeInternal: true`); a global
+  module the module declares stays in `imports`. `graph_cycles` leaves the global links out: they
+  would make every global module a cycle with whatever imports it.
 - Modules that share a class name (two dynamic instances of one module, for example) are listed as
   `Name#1`, `Name#2` in the order Nest registered them; use those names as input.
 - `dependsOn` and `dependents` count constructor and property injection. Enhancers attached with

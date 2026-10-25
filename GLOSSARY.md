@@ -15,7 +15,8 @@ _Avoid_: server (ambiguous with the MCP server the SDK creates per request)
 
 **Scope**:
 The boundary an instance observes. Either the whole app (`forRoot`) or a module closure (`forFeature`):
-that module and everything it imports, transitively. Every tool answers within the instance's scope.
+that module and everything it imports, transitively, global modules included. Every tool answers
+within the instance's scope.
 _Avoid_: context (Nest and MCP both use it for other things), area, slice
 
 **Listener**:

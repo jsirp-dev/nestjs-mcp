@@ -1,5 +1,9 @@
 import type { VersioningOptions } from '@nestjs/common';
-import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js';
+import {
+  GraphReader,
+  type ModulesImportsLike,
+  type SerializedGraphLike,
+} from '../graph/graph-reader.js';
 import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
@@ -84,10 +88,12 @@ export function createToolContext(
   options: ResolvedNestMcpOptions,
   applicationConfig: ApplicationConfigLike,
   serializedGraph: SerializedGraphLike | undefined,
+  /** Each module's imports in Nest's order, which tells implicit global links apart. */
+  modulesContainer: ModulesImportsLike,
   /** The instance's own marker token, provided in its module (`NEST_MCP_INSTANCE`). */
   instanceToken: symbol,
 ): ToolContext {
-  const graph = new GraphReader(serializedGraph);
+  const graph = new GraphReader(serializedGraph, modulesContainer);
   let resolved: InstanceScope | undefined = options.scope === 'app' ? { kind: 'app' } : undefined;
   return {
     options,
