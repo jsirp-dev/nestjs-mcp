@@ -1,6 +1,7 @@
 import { createLogSink, isLogSink, connectLogSink, logSinkStats } from '../src/logs/log-sink.js';
 import { normalizeLogLevel } from '../src/logs/normalize.js';
 import type { LogRecord } from '../src/logs/model.js';
+import { runWithTrace, type ActiveTrace } from '../src/requests/trace-context.js';
 import { RingBuffer } from '../src/support/ring-buffer.js';
 
 const STACK = 'Error: boom\n    at Object.<anonymous> (/app/cats.service.ts:10:11)';
@@ -234,5 +235,31 @@ describe('LogSink', () => {
     );
     sink.write('x\n');
     expect(shared.length).toBe(1);
+  });
+});
+
+describe('the request a sink line was written in', () => {
+  const traced = (id: string) =>
+    ({
+      trace: { id, method: 'GET', url: '/', startedAt: '', steps: [] },
+      t0: 0,
+    }) satisfies ActiveTrace;
+
+  it('carries the id of the request traced when the line arrives', () => {
+    const { sink, entries } = connected();
+    runWithTrace(traced('r1'), {}, () => sink.write('inside\n'));
+    sink.write('outside\n');
+    expect(entries().map((entry) => [entry.message, entry.requestId])).toEqual([
+      ['inside', 'r1'],
+      ['outside', undefined],
+    ]);
+  });
+
+  it('carries none on a line held before the sink was connected', () => {
+    const sink = createLogSink();
+    runWithTrace(traced('r2'), {}, () => sink.write('held\n'));
+    const buffer = connectLogSink(sink, { buffer: undefined, size: 10, normalize: undefined });
+    expect(buffer.all()).toEqual([expect.not.objectContaining({ requestId: expect.anything() })]);
+    expect(buffer.all()[0]!.message).toBe('held');
   });
 });

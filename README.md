@@ -235,7 +235,7 @@ instance installs nothing.
 
 | Tool | Input | Answers |
 |------|-------|---------|
-| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `source?` (`'nest'` or `'sink'`), `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, source, timestamp, level, context, message, stack? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
+| `logs_tail` | `limit?` (≤ 500, default 100), `level?`, `minLevel?`, `context?`, `contains?`, `source?` (`'nest'` or `'sink'`), `requestId?`, `sinceSeq?`, `scope?` (`'instance'` or `'app'`) | `entries`, oldest first, each `{ seq, source, timestamp, level, context, message, stack?, requestId? }`; `lastSeq`, to pass as `sinceSeq` next time; `more` when a page after `sinceSeq` was cut at `limit`; `dropped` when entries after `sinceSeq` already left the buffer |
 | `logs_levels` | — | `levels` Nest's logger has on (`null` if it has no `isLevelEnabled`, or with `capture: 'sink'`), `capture`, the `buffer` (`size`, `length`, `lastSeq`) and the `sink` (`connected`, `received`, `errors`, `lastError?`; `null` without one) |
 
 - Levels are Nest's: `verbose`, `debug`, `log`, `warn`, `error`, `fatal`. `minLevel` keeps that level
@@ -255,6 +255,15 @@ instance installs nothing.
   so the buffer holds what your logger keeps. With `logger: false` nothing is printed, as before,
   and the buffer still fills.
 - The inspector's own lines (context `NestMcp`) are in the buffer too.
+- **`requestId`** is the id of the request being traced when the entry was captured (the
+  correlation header's value, or the generated id `requests_list` shows); `logs_tail({ requestId })`
+  reads one request's lines and [`request_trace`](#request-traces) lists them. It is read from the
+  request's async context at the moment the tee or the sink receives the line, so an entry written
+  outside a request has none, and so has a sink line delivered outside that context: one your logger
+  hands over later (an asynchronous transport, a worker-thread destination such as
+  `pino.transport`) or one the sink held before it was connected. A line logged by a middleware
+  that runs after one that lost the async context (and before the first guard) has none either. It
+  needs the `requests` group on; without it no entry carries one.
 
 ### Reading your own logger
 
@@ -382,7 +391,7 @@ curl -H 'x-nest-mcp-request-id: try-1' http://localhost:3000/api/cats/abc
 | Tool | Input | Answers |
 |------|-------|---------|
 | `requests_list` | `limit?` (≤ 200, default 50), `method?`, `path?` (substring of the URL), `status?`, `minStatus?`, `scope?` (`'instance'` or `'app'`) | `requests`, oldest first, each `{ id, method, url, startedAt, statusCode, durationMs, handler, module, steps }` (`inFlight: true` while it runs); `matched` |
-| `request_trace` | `id`, `scope?` | The trace: `method`, `url`, `route`, `statusCode`, `durationMs`, `controller`, `handler`, `module`, `headers` and its `steps` in order; with several traces sharing an id, the latest |
+| `request_trace` | `id`, `scope?` | The trace: `method`, `url`, `route`, `statusCode`, `durationMs`, `controller`, `handler`, `module`, `headers`, its `steps` in order and, with the `logs` group on, its `logs`; with several traces sharing an id, the latest |
 
 Each step is `{ kind, name, level?, outcome, error?, startedAtMs, durationMs }`, timed from the start
 of the request:
@@ -415,6 +424,13 @@ TimingInterceptor exit threw`, status 400.
   `requests.*`.
 - Enhancers in `REQUEST` or `TRANSIENT` scope have no long-lived instance to observe; a trace lists
   the ones on its route in `notTraced`.
+- **`logs`** (with the `logs` group on) are the [log entries](#logs) written during this request that
+  the logs buffer still holds, oldest first, as `logs_tail` answers them: Nest's own exceptions
+  handler logs an unhandled error inside the request, so a 500 lists that line too. At most 200, the
+  newest, with `logsTruncated: true` when more matched; `logsDropped: true` when the buffer already
+  discarded some of them, so the list is not taken for the whole. Lines of an earlier request that
+  reused the same id are not listed. They are listed whatever the instance's scope, since the trace
+  itself already is in scope. Lines are matched as `requestId` says, with its limits.
 
 ### Events
 

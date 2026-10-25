@@ -23,6 +23,7 @@ export interface LogsTailInput {
   contains?: string;
   source?: LogSource;
   sinceSeq?: number;
+  requestId?: string;
   scope?: 'instance' | 'app';
 }
 
@@ -72,6 +73,7 @@ export function logsTail(
       (input.source === undefined || entry.source === input.source) &&
       LOG_LEVELS.indexOf(entry.level) >= minRank &&
       (input.context === undefined || entry.context === input.context) &&
+      (input.requestId === undefined || entry.requestId === input.requestId) &&
       (contexts === null || (entry.context !== null && contexts.has(entry.context))) &&
       (needle === undefined ||
         entry.message.toLowerCase().includes(needle) ||
@@ -111,7 +113,9 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
       "useLogger; source 'nest') and, when the app attached the inspector's log sink to its own " +
       "logger (pino, winston…), that logger's lines (source 'sink'), oldest first: seq, source, " +
       'timestamp, level, context, message and, when known, stack. Filter by exact level, minimum ' +
-      'level, source, exact context or a case-insensitive substring of the message. Pass the ' +
+      'level, source, exact context, the requestId of the request it was written in (as ' +
+      'requests_list shows it; entries written outside a request have none) or a ' +
+      'case-insensitive substring of the message. Pass the ' +
       'answered lastSeq as sinceSeq to read only what came after. A module-scoped instance keeps ' +
       "only entries whose context is a class in its scope; scope: 'app' lifts that. Without a sink, " +
       "what a logger writes outside Nest's Logger (pino-http request lines, for example) is not here; " +
@@ -138,6 +142,11 @@ export function registerLogsTools(registry: ToolRegistry, context: ToolContext):
         .min(0)
         .optional()
         .describe('Only entries after this seq, oldest first'),
+      requestId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Only entries written while this request was traced (its id in requests_list)'),
       scope: z
         .enum(['instance', 'app'])
         .optional()

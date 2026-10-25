@@ -1,5 +1,6 @@
 import { Writable } from 'node:stream';
 import { RingBuffer } from '../support/ring-buffer.js';
+import { currentOrigin, pushLog, type LogOrigin } from './log-origin.js';
 import type { LogRecord } from './model.js';
 import {
   builtInLogEntry,
@@ -116,7 +117,8 @@ export class LogSink extends Writable {
     this.connection = { buffer, normalize: target.normalize };
     const pending = this.pending;
     this.pending = [];
-    for (const { record, receivedAt } of pending) this.deliver(record, receivedAt);
+    // Held lines carry no origin: they were not delivered in the context they were written in.
+    for (const { record, receivedAt } of pending) this.deliver(record, receivedAt, undefined);
     return buffer;
   }
 
@@ -132,7 +134,8 @@ export class LogSink extends Writable {
     this.stats.received += 1;
     const receivedAt = new Date().toISOString();
     if (this.connection) {
-      this.deliver(record, receivedAt);
+      // Read now: the logger calls the sink inside the request's async context, when it is sync.
+      this.deliver(record, receivedAt, currentOrigin());
       return;
     }
     this.pending.push({ record, receivedAt });
@@ -140,7 +143,7 @@ export class LogSink extends Writable {
   }
 
   /** Lines are parsed here, not on arrival, so a sink nobody connected costs little. */
-  private deliver(received: unknown, receivedAt: string): void {
+  private deliver(received: unknown, receivedAt: string, origin: LogOrigin | undefined): void {
     const connection = this.connection!;
     const record = typeof received === 'string' ? parseLine(received) : received;
     let entry: LogSinkEntry | undefined;
@@ -152,7 +155,11 @@ export class LogSink extends Writable {
       }
     }
     try {
-      connection.buffer.push(toSinkRecord(entry ?? builtInLogEntry(record), receivedAt));
+      pushLog(
+        connection.buffer,
+        toSinkRecord(entry ?? builtInLogEntry(record), receivedAt),
+        origin,
+      );
     } catch (error) {
       this.fail(error);
     }

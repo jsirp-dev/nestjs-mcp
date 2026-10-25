@@ -74,6 +74,13 @@ describe('a middleware that loses the async context before the route', () => {
     expect(form).toMatchObject(identity);
     expect(json.steps.map(shape)).toEqual(steps);
     expect(json).toMatchObject(identity);
+    // The handler's log line is tied to its request too, with the context multer lost.
+    expect(form.logs).toEqual([
+      expect.objectContaining({ message: 'form received', requestId: 'form' }),
+    ]);
+    expect(json.logs).toEqual([
+      expect.objectContaining({ message: 'form received', requestId: 'json' }),
+    ]);
   });
 
   it('records the filter that catches an exception of a multipart request', async () => {

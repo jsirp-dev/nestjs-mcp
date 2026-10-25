@@ -1,5 +1,6 @@
 import type { LoggerService, LogLevel as NestLogLevel } from '@nestjs/common';
 import { RingBuffer } from '../support/ring-buffer.js';
+import { currentOrigin, pushLog } from './log-origin.js';
 import { LOG_LEVELS, type LogLevel, type LogRecord } from './model.js';
 
 const MESSAGE_CAP = 2000;
@@ -136,12 +137,13 @@ export class LogTee implements LoggerService {
   private record(level: LogLevel, message: unknown, params: unknown[]): void {
     try {
       if (this.inner?.isLevelEnabled?.(level) === false) return;
-      this.buffer.push({
+      const record: LogRecord = {
         source: 'nest',
         timestamp: new Date().toISOString(),
         level,
         ...splitLogCall(level, [message, ...params]),
-      });
+      };
+      pushLog(this.buffer, record, currentOrigin());
     } catch {
       // Copying must never break the app's logging.
     }

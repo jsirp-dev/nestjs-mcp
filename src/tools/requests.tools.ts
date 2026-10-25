@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { describeScope, inScope, type AnswerScope, type InstanceScope } from '../instance/scope.js';
+import { logsOf } from '../logs/log-origin.js';
+import type { LogEntry } from '../logs/model.js';
 import type { RequestTrace, TraceStep } from '../requests/model.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
 import type { Enhancer, RouteModel } from '../routes/model.js';
@@ -8,6 +10,8 @@ import type { ToolContext } from './tool-context.js';
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
+/** Log entries `request_trace` lists per request; beyond that, the newest. */
+export const MAX_TRACE_LOGS = 200;
 
 export interface RequestsListInput {
   limit?: number;
@@ -39,6 +43,15 @@ export interface RequestTraceAnswer extends RequestTrace {
   inFlight?: true;
   /** Enhancers on this route with no long-lived instance (`REQUEST`, `TRANSIENT`): not traced. */
   notTraced?: string[];
+  /**
+   * With the `logs` group on: the entries written during this request that the logs buffer still
+   * holds, oldest first, at most `MAX_TRACE_LOGS` (the newest).
+   */
+  logs?: LogEntry[];
+  /** More entries than `MAX_TRACE_LOGS` matched; the oldest were left out. */
+  logsTruncated?: true;
+  /** The logs buffer already discarded some of this request's entries. */
+  logsDropped?: true;
 }
 
 /** The routes Nest registered, to find the one a trace went through (needs `snapshot`). */
@@ -225,7 +238,10 @@ export function registerRequestsTools(registry: ToolRegistry, context: ToolConte
       '(enter, then exit when its Observable answered), each pipe with the parameter it ' +
       'transformed, the handler, and any exception filter that caught, with timings. Request ' +
       'bodies are never stored. Enhancers with no long-lived instance (REQUEST or TRANSIENT ' +
-      'scope) are listed in notTraced. With several traces sharing an id, the latest.',
+      'scope) are listed in notTraced. With several traces sharing an id, the latest. When the ' +
+      'logs tools are on, logs lists what the app logged during this request and the logs buffer ' +
+      `still holds, oldest first, at most ${MAX_TRACE_LOGS} (the newest; logsTruncated says more ` +
+      'matched), and logsDropped says the buffer already discarded some of them.',
     inputSchema: {
       id: z.string().min(1).describe('The correlation header value, or an id from requests_list'),
       scope: scopeInput,
@@ -254,7 +270,14 @@ export function registerRequestsTools(registry: ToolRegistry, context: ToolConte
           { scope: answer },
         );
       }
-      return { scope: answer, trace: present(trace, route, active.untraced) };
+      const presented = present(trace, route, active.untraced);
+      if (context.logs) {
+        const { entries, dropped } = logsOf(context.logs.buffer, trace);
+        presented.logs = entries.slice(-MAX_TRACE_LOGS);
+        if (entries.length > MAX_TRACE_LOGS) presented.logsTruncated = true;
+        if (dropped) presented.logsDropped = true;
+      }
+      return { scope: answer, trace: presented };
     },
   });
 }

@@ -65,7 +65,7 @@ interface PinoApp {
   client: Client;
   /** Every chunk pino wrote to the stand-in for stdout. */
   stdout: string[];
-  get(path: string): Promise<string>;
+  get(path: string, headers?: Record<string, string>): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -121,8 +121,8 @@ async function bootPino(options: { capture?: LogCapture; sink?: LogSink } = {}):
     app,
     client,
     stdout,
-    async get(path) {
-      const text = await (await fetch(`http://127.0.0.1:${port}${path}`)).text();
+    async get(path, headers = {}) {
+      const text = await (await fetch(`http://127.0.0.1:${port}${path}`, { headers })).text();
       const deadline = Date.now() + 2000;
       while (!stdout.some((line) => line.includes('request completed')) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -220,6 +220,34 @@ describe('log sink with pino', () => {
     ]);
     const levels = await call(running.client, 'logs_levels');
     expect(levels.json.capture).toBe('both');
+  });
+
+  it('ties the lines pino writes inside a request to it, and leaves lines outside one without', async () => {
+    const sink = createLogSink();
+    running = await bootPino({ capture: 'sink', sink });
+    await running.get('/charge', { 'x-nest-mcp-request-id': 'pino-1' });
+
+    const tail = await call(running.client, 'logs_tail', { source: 'sink', limit: 500 });
+    const entries: Json[] = tail.json.entries;
+    for (const message of [SECRET_LINE, 'card about to expire', 'charge failed']) {
+      expect(entries.find((entry) => entry.message === message)).toMatchObject({
+        requestId: 'pino-1',
+      });
+    }
+    // A pino line written outside any request, as at bootstrap.
+    sink.write(`${JSON.stringify({ level: 30, msg: 'outside a request', context: 'Boot' })}\n`);
+    const outside = await call(running.client, 'logs_tail', { context: 'Boot' });
+    expect(outside.json.entries).toHaveLength(1);
+    expect(outside.json.entries[0]).not.toHaveProperty('requestId');
+
+    const byId = await call(running.client, 'logs_tail', { requestId: 'pino-1' });
+    expect(byId.json.entries.map((entry: Json) => entry.message)).toEqual(
+      expect.arrayContaining([SECRET_LINE, 'charge failed']),
+    );
+    const trace = await call(running.client, 'request_trace', { id: 'pino-1' });
+    expect(trace.json.trace.logs.map((entry: Json) => entry.message)).toEqual(
+      byId.json.entries.map((entry: Json) => entry.message),
+    );
   });
 
   it("with capture 'nest', ignores the sink", async () => {

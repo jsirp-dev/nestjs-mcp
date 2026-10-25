@@ -7,6 +7,7 @@ import {
   Controller,
   ExceptionFilter,
   Injectable,
+  Logger,
   MiddlewareConsumer,
   Module,
   NestInterceptor,
@@ -72,8 +73,11 @@ export class UploadFilter implements ExceptionFilter {
 @UseInterceptors(UploadInterceptor)
 @UseFilters(UploadFilter)
 export class UploadController {
+  private readonly logger = new Logger(UploadController.name);
+
   @Post('form')
   form(@Body(UploadPipe) body: Record<string, unknown>): { fields: number } {
+    this.logger.log('form received');
     return { fields: Object.keys(body ?? {}).length };
   }
 

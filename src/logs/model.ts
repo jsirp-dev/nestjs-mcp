@@ -29,6 +29,11 @@ export interface LogRecord {
    * `Error`. From the sink, the record's `stack` or `err.stack`, at any level.
    */
   stack?: string;
+  /**
+   * The id of the request traced when the entry was captured (the correlation header's value or
+   * the generated id `requests_list` shows); absent outside a request.
+   */
+  requestId?: string;
 }
 
 /** What `logs_tail` answers per entry. */

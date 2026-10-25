@@ -13,6 +13,72 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Log entries carry the request they were written in (ticket #27, 2026-10-25)
+
+#### Done
+
+- `LogRecord` gains an optional `requestId`: the id of the request traced when the entry was
+  captured (the correlation header's value or the generated id `requests_list` shows). Entries
+  written outside a request have none.
+- The tee reads the active trace when it copies a call; the log sink does the same when a line
+  arrives while it is connected. Both use `current()` of `src/requests/trace-context.ts`, the lookup
+  #18 made survive a middleware that loses the async context, so a multipart request through multer
+  keeps its log lines as it keeps its steps. A line the sink held before it was connected has none.
+- `logs_tail` gains a `requestId` filter.
+- `request_trace` gains `logs` (the request's entries the logs buffer still holds, oldest first, at
+  most 200, the newest), `logsTruncated: true` beyond 200 and `logsDropped: true` when the buffer
+  already discarded some of them. Only with the `logs` group on; with `requests` off no entry
+  carries `requestId`.
+- One place stamps entries: `src/logs/log-origin.ts` (`currentOrigin`, `pushLog`, `logsOf`).
+- README (logs and request traces) and `GLOSSARY.md` (*request id*, *trace*).
+
+#### Hot decisions
+
+- **Entries are matched to the trace object, not only to the id.** Each stamped entry also keeps
+  its trace record under a symbol key (`Symbol.for('@jsirp/nestjs-mcp/log-owner')`), which the
+  buffer's spread copies and `JSON.stringify` leaves out. `request_trace` lists the entries of that
+  very trace, so a client that reuses an id, or two apps of one process that receive the same id,
+  never mix lines. `logs_tail({ requestId })` filters by the id string, as the ticket asks, so it
+  does list every request that used it.
+- **`logsDropped` from the first `seq`:** per buffer and per trace (`WeakMap`s), the `seq` of the
+  first entry the trace wrote. The buffer drops the oldest first, so some of the request's lines
+  are gone exactly when that `seq` is older than the oldest entry held. No counters on the trace.
+- **The newest 200 when truncated**, unlike steps (the first 256): the lines nearest the failure
+  are the ones an agent reads a trace for.
+- **Lines of a request are listed whatever the instance's scope**: the trace was already checked
+  against it; filtering its lines by class name as `logs_tail` does would hide, for instance, the
+  line Nest's `ExceptionsHandler` writes for an unhandled error.
+- **Held sink lines carry no `requestId`**, as the ticket says, even though the origin could be read
+  on arrival: they were not delivered in the context they were written in.
+
+#### Notes for the next session
+
+- For #28: add the run's lookup to `currentOrigin()` in `src/logs/log-origin.ts` (a `runId` next to
+  `requestId` in `LogOrigin` and `LogRecord`, the run record as `owner`), a `runId` filter in
+  `logsTail`, and `logsOf(buffer, run)` gives `run_get` its lines and `logsDropped` as is.
+- A stamped entry holds a reference to its trace record, so a trace evicted from the requests
+  buffer stays in memory while any of its lines is in the logs buffer (bounded by
+  `logs.bufferSize`).
+- Two copies of this package in one process (two Nest majors) each have their own
+  `AsyncLocalStorage`: a tee installed by one copy does not see the traces of the other.
+
+#### Verification
+
+New fixture `LoggedModule` (opt-in, `logged: true`): a handler that logs twice across an await and
+throws, and one that logs `count` lines `delay` ms apart. `UploadController.form` now logs a line.
+`test/request-logs.spec.ts`: the failing request's trace lists its two lines and Nest's
+`ExceptionsHandler` line, the handler step `threw`, and `logs_tail({ requestId })` answers the
+same seqs and nothing of another request; two concurrent requests whose lines interleave each list
+only their own; a generated id; a reused id lists only the latest request's lines; `logsDropped`
+with `logs.bufferSize: 4`; 250 lines give the newest 200 and `logsTruncated`; `logs: []` for a quiet
+request; with `tools.requests: false` entries have exactly the keys they had; with
+`tools.logs: false` traces have no `logs*` field. `test/multipart.spec.ts`: the multer request keeps
+its line. `test/log-sink-app.spec.ts`: pino lines written inside a request (`PinoLogger`, Nest's
+`Logger` through pino, pino-http's `request completed`) carry its id and `request_trace` lists
+them; a line outside a request has none. `test/log-sink.spec.ts`: a connected sink stamps the
+traced request; a held line is not stamped. `yarn format-check`, `yarn lint`, `yarn type-check`,
+`yarn build`, `yarn test` (19 suites / 242 tests) green on Nest 11.2.8 and on Nest 10.4.22 (scratch copy).
+
 ### Traces survive a middleware that loses the async context (ticket #18, 2026-10-25)
 
 #### Done

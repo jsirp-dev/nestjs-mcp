@@ -52,7 +52,7 @@ _Avoid_: middleware (a different Nest concept, reported separately), decorator
 
 **Trace**:
 What the inspector records about one request: method, full URL, status, timing, the handler, and the
-ordered steps it went through.
+ordered steps it went through. `request_trace` also lists the log entries that carry its request id.
 _Avoid_: log (the Logger output is a different thing), span, request history
 
 **Step**:
@@ -69,3 +69,9 @@ _Avoid_: devtools mode, inspector mode
 The request header (`x-nest-mcp-request-id` by default) an agent sets on a request so it can ask for
 that request's trace afterwards. Read, never echoed back.
 _Avoid_: request id (that is the value; this is the header carrying it)
+
+**Request id**:
+The id of a trace: the correlation header's value, or a generated one when the request had none. A
+log entry written while the request was traced carries it as `requestId`; one written outside a
+request has none.
+_Avoid_: correlation id, trace id (both blur the value with the header or with the trace itself)
