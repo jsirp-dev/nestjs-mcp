@@ -111,12 +111,16 @@ zod shapes blows up in some TypeScript configurations).
 { "server": { "name": "…", "version": "…" }, "nest": "11.2.3", "node": "v20.19.4", "uptimeSeconds": 12,
   "globalPrefix": "api", "versioning": { "type": "URI", "defaultVersion": "1" }, "mcpPath": "/api/_mcp",
   "scope": { "kind": "app" }, "snapshot": true,
-  "tools": { "graph": false, "routes": false, "logs": false, "requests": false, "events": false, "schedule": false } }
+  "tools": { "graph": false, "routes": false, "logs": false, "requests": false, "events": false, "schedule": false },
+  "options": { "tools": { "graph": true, "routes": true, "logs": true, "requests": true, "events": true, "schedule": true },
+               "requests": { "headers": "names" } } }
 ```
 
 `scope` is `{ kind: 'module', module: null }` for `forFeature` until phase 2 resolves the name.
 `snapshot` says whether `SerializedGraph` has nodes. `tools` reports which groups are live (all `false`
-in this phase except what the switches would allow once the groups exist).
+in this phase except what the switches would allow once the groups exist). `options` reports the resolved
+switches and the `requests.headers` policy the instance was given, so a switch is visible before its
+group exists.
 
 ### 5. Fixture app and harness
 
@@ -154,7 +158,8 @@ throws; `forRootAsync` with `useFactory` works; `LocalOnlyGuard` unit cases.
   `src/nest-mcp.bootstrap.ts`
 - `src/transport/{nest-mcp.controller.ts,local-only.guard.ts,create-mcp-server.ts}`
 - `src/tools/{registry.ts,tool-context.ts,app.tools.ts}`
-- `test/fixtures/app/**`, `test/support/start-app.ts`, `test/transport.spec.ts`
+- `test/fixtures/app/**`, `test/support/start-app.ts`, `test/transport.spec.ts`,
+  `test/instances.spec.ts`
 
 ### Modified
 
@@ -168,6 +173,10 @@ change; that is the host's commit, on its side.
 - [x] `yarn install` changes nothing but `yarn.lock`.
 - [x] `yarn build` produces `dist/index.js`, `dist/index.cjs`, `dist/index.d.ts`.
 - [x] `yarn test` green with `test/transport.spec.ts`.
+- [x] `yarn test` green with `test/instances.spec.ts`: two apps in one process keep their own path and
+      guards; every instance logs its full endpoint once; each warning appears once per instance when
+      its condition holds and never otherwise; `app_info.options` shows the resolved switches and
+      `requests.headers`.
 - [x] `yarn lint` and `yarn type-check` green; a file importing a package absent from `package.json`
       fails lint with `import/no-extraneous-dependencies` (checked and reverted).
 - [x] `sh .husky/pre-commit` passes by hand.

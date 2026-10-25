@@ -121,7 +121,7 @@ dependencies must come from a global module or, in the async variants, from `imp
 
 | Group | Tools | Status |
 |-------|-------|--------|
-| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live | ✅ |
+| `app` | `app_info`: Nest and Node versions, uptime, global prefix, versioning, endpoint path, instance scope, whether `snapshot` is on, which groups are live, and the instance's tool switches and `requests.headers` policy | ✅ |
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | planned |
 | `routes` | `routes_list`, `route_get` (each route with its guards, interceptors, pipes and filters, global → controller → method) | planned |
 | `logs` | `logs_tail`, `logs_levels` | planned |

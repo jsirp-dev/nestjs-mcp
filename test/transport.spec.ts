@@ -60,6 +60,17 @@ describe('inspector endpoint', () => {
         events: false,
         schedule: false,
       },
+      options: {
+        tools: {
+          graph: true,
+          routes: true,
+          logs: true,
+          requests: true,
+          events: true,
+          schedule: true,
+        },
+        requests: { headers: 'names' },
+      },
     });
   });
 

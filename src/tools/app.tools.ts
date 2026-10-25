@@ -2,6 +2,7 @@ import { VERSION_NEUTRAL, VersioningType, type VersioningOptions } from '@nestjs
 import {
   SWITCHABLE_TOOL_GROUPS,
   type InstanceScopeKind,
+  type RequestHeadersMode,
   type SwitchableToolGroup,
 } from '../nest-mcp.options.js';
 import { nestVersion } from '../support/package-info.js';
@@ -32,7 +33,13 @@ export interface AppInfo {
   mcpPath: string;
   scope: { kind: 'app' } | { kind: 'module'; module: string | null };
   snapshot: boolean;
+  /** Which tool groups have tools registered right now. */
   tools: Record<SwitchableToolGroup, boolean>;
+  /** The instance's resolved options that decide what it exposes and keeps. */
+  options: {
+    tools: Record<SwitchableToolGroup, boolean>;
+    requests: { headers: RequestHeadersMode };
+  };
 }
 
 const VERSIONING_TYPES: Record<number, AppInfoVersioning['type']> = {
@@ -79,6 +86,10 @@ export function appInfo(registry: ToolRegistry, context: ToolContext): AppInfo {
     tools: Object.fromEntries(
       SWITCHABLE_TOOL_GROUPS.map((group) => [group, registry.isLive(group)]),
     ) as Record<SwitchableToolGroup, boolean>,
+    options: {
+      tools: { ...options.tools },
+      requests: { headers: options.requests.headers },
+    },
   };
 }
 
@@ -88,7 +99,8 @@ export function registerAppTools(registry: ToolRegistry, context: ToolContext): 
     description:
       'What this NestJS app is and how this inspector is mounted: Nest and Node versions, uptime, ' +
       'global prefix, versioning, the endpoint path, the instance scope, whether the app was ' +
-      'created with snapshot: true, and which tool groups are live.',
+      'created with snapshot: true, which tool groups are live, and the tool switches and request ' +
+      'header policy this instance was given.',
     handler: () => appInfo(registry, context),
   });
 }
