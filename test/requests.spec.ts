@@ -362,6 +362,52 @@ describe('requests tools', () => {
     expect(unwrapped.map(([status]) => status)).toEqual([200, 200, 403, 400, 404]);
   });
 
+  describe('matched to their route like route_get names it', () => {
+    let client: Client;
+
+    beforeEach(async () => {
+      client = await boot({ wrapped: true });
+    });
+
+    it('names a handler a decorator replaced by its property key, with module, levels and notTraced', async () => {
+      expect((await send('/wrapped/wrapped', 'wrapped')).status).toBe(200);
+      const trace = await traceOf(client, 'wrapped');
+      expect(trace).toMatchObject({
+        controller: 'WrappedController',
+        handler: 'wrapped',
+        route: '/wrapped/wrapped',
+        module: 'WrappedModule',
+        notTraced: ['WrappedScopedInterceptor'],
+      });
+      expect(trace.steps.map(shape)).toEqual([
+        'guard:WrappedGuard:allowed',
+        'handler:WrappedController.wrapped:ok',
+      ]);
+      expect(trace.steps[0].level).toBe('controller');
+
+      const { json } = await call(client, 'requests_list');
+      expect(json.requests.find((request: Json) => request.id === 'wrapped')).toMatchObject({
+        handler: 'WrappedController.wrapped',
+        module: 'WrappedModule',
+      });
+    });
+
+    it('names an inherited wrapped handler by its key on each controller that runs it', async () => {
+      await send('/derived-a/inherited', 'derived-a');
+      await send('/derived-b/inherited', 'derived-b');
+      await send('/derived-a/inherited', 'derived-a-again');
+      for (const [id, controller] of [
+        ['derived-a', 'DerivedAController'],
+        ['derived-b', 'DerivedBController'],
+        ['derived-a-again', 'DerivedAController'],
+      ]) {
+        const trace = await traceOf(client, id!);
+        expect(trace).toMatchObject({ controller, handler: 'inherited', module: 'WrappedModule' });
+        expect(trace.steps.map(shape)).toEqual([`handler:${controller}.inherited:ok`]);
+      }
+    });
+  });
+
   describe('with tools.requests off', () => {
     function marked(app: RunningApp['app']): string[] {
       const found: string[] = [];

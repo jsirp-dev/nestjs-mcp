@@ -13,6 +13,35 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Wrapped handlers keep their route in traces (ticket #19, 2026-10-25)
+
+#### Done
+
+- The trace names its handler by the property key under which the controller's prototype chain
+  holds `context.getHandler()` (`handlerKey`, `src/support/handler-key.ts`), the key Nest registered
+  the route by and `routes_list` shows, and falls back to the function's `name` when no key holds
+  it. A method decorator that replaced the handler with a wrapper (`descriptor.value = function
+  (...args) {…}`) gave `handler: ""` and step `C.`; now the trace finds its route, so it has
+  `module`, `level` on every step and `notTraced`, and `requests_list` its `handler` and `module`.
+- The lookup reads descriptors (no getter of the app runs) and walks the whole chain, so a wrapped
+  handler inherited from a base class is named on every controller that inherits it.
+- README: the `handler` step is named by the property key.
+
+#### Hot decisions
+
+- **Cached per controller class, then per function**, not per function alone: a base class's handler
+  is one function for every subclass, and the key is looked up on the chain of the class that ran.
+- **The same function under several keys** (an alias on the prototype): its own `name` wins if it is
+  one of them, otherwise the first key in prototype order.
+
+#### Verification
+
+New fixture `WrappedModule` (opt-in, `wrapped: true`) with a wrapped handler (a controller guard and
+a request-scoped interceptor on it) and a wrapped handler two controllers inherit;
+`test/requests.spec.ts` checks name, `module`, `level` and `notTraced`, and
+`test/route-matching.spec.ts` the key lookup (several keys, inheritance and overrides, getters).
+`yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` green.
+
 ### Log sink: the host's own logger in `logs_tail` (ticket #24, 2026-10-25)
 
 Implements decision 2 of [ADR-0004](docs/adr/0004-own-listener-and-log-sink.md).

@@ -392,7 +392,7 @@ of the request:
 | `guard` | When `canActivate` returns (or its Promise or Observable settles) | `allowed`, `denied` (returned `false`, Nest answers 403) or `threw` |
 | `interceptor` | Twice: `phase: 'enter'` when `intercept` is called, `phase: 'exit'` when the Observable it returned answers; `shortCircuited: true` on the exit when it answered without calling `next.handle()` | `ok` or `threw` |
 | `pipe` | Per argument, with `param` (`'id'`) and `paramType` (`param`, `query`, `body`, `custom`); never the value | `ok` or `threw` |
-| `handler` | Named `Controller.handler`, placed where it ran: after the pipes, before the interceptors' exits. Absent when a pipe or an interceptor stopped the request first | `ok` or `threw` |
+| `handler` | Named `Controller.handler` by the method's property key, as `routes_list` names it (also when a decorator replaced the method with a wrapper), placed where it ran: after the pipes, before the interceptors' exits. Absent when a pipe or an interceptor stopped the request first | `ok` or `threw` |
 | `filter` | When an exception filter of yours handles an exception, with that exception in `error` | `caught`, or `threw` if the filter itself threw |
 
 So `GET /api/cats/abc` on a route with an API-key guard, a timing interceptor and `ParseIntPipe`

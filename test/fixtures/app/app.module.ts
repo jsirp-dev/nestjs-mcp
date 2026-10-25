@@ -11,6 +11,7 @@ import { CatsModule } from './cats/cats.module.js';
 import { AppGuard } from './global.guards.js';
 import { HealthModule } from './health.module.js';
 import { TraceModule } from './trace.middleware.js';
+import { WrappedModule } from './wrapped.module.js';
 
 type RootInspector =
   | { kind: 'none' }
@@ -39,6 +40,8 @@ export interface FixtureAppOptions {
   requestScoped?: boolean;
   /** Import `HealthModule`, a controller outside `CatsModule`. */
   health?: boolean;
+  /** Import `WrappedModule`: handlers replaced by decorators. */
+  wrapped?: boolean;
   /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
   events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];
   /** Import `ScheduleModule.forRoot`, which schedules the fixture's decorated jobs. */
@@ -72,6 +75,7 @@ export class AppModule {
         ...inspector,
         ...(options.middleware ? [TraceModule] : []),
         ...(options.health ? [HealthModule] : []),
+        ...(options.wrapped ? [WrappedModule] : []),
         ...(options.events
           ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]
           : []),

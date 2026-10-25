@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
+import { handlerKey } from '../support/handler-key.js';
 import type { RequestTrace, TraceError, TraceStep } from './model.js';
 
 /** A trace while its request runs: the public record and the clock it is measured against. */
@@ -74,7 +75,10 @@ export function identify(active: ActiveTrace, context: unknown): void {
   const controller = ctx.getClass() as { name?: string } | undefined;
   const handler = ctx.getHandler() as { name?: string } | undefined;
   if (typeof controller?.name === 'string') trace.controller = controller.name;
-  if (typeof handler?.name === 'string') trace.handler = handler.name;
+  // By key, as the route is: a decorator that replaced the method leaves a wrapper named `''`.
+  const key = handlerKey(controller, handler);
+  if (key !== undefined) trace.handler = key;
+  else if (typeof handler?.name === 'string') trace.handler = handler.name;
   const request = ctx.switchToHttp?.().getRequest() as { route?: { path?: unknown } } | undefined;
   if (typeof request?.route?.path === 'string') trace.route = request.route.path;
 }
