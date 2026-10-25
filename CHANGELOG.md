@@ -13,6 +13,82 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 4 — Live logs from the app's `Logger` (2026-10-25)
+
+**Work commit:** `a82aadc` (ticket #6).
+
+### Done
+
+- `RingBuffer<T>` (`src/support/ring-buffer.ts`): fixed size, drops the oldest, numbers entries with
+  a growing `seq` from 1; `push`, `all`, `since(seq)`, `last(n)`, `size`, `length`, `lastSeq`.
+- `LogTee` (`src/logs/log-tee.ts`): forwards `log`, `error`, `warn`, `debug`, `verbose`, `fatal`
+  and `setLogLevels` to the app's logger exactly as called (optional methods only if present) and
+  copies `{ timestamp, level, context, message, stack? }` to the buffer, splitting context and stack
+  the way `ConsoleLogger` does. `installLogTee` (`src/logs/install-log-tee.ts`) installs it once per
+  process with `Logger.overrideLogger` and returns the active tee to every later instance.
+- `logs_tail` (`limit`, `level`, `minLevel`, `context`, `contains`, `sinceSeq`, `scope`) and
+  `logs_levels`, switched by `tools.logs`; a `forFeature` instance filters by the class names of its
+  closure used as context, and says so in `scopeFilter`.
+- Fixture `LoggingService` (opt-in `logging`), `MemoryLogger` in the harness (`RecordingLogger`
+  extends it), `test/log-tee.spec.ts`, `test/logs.spec.ts` with a `nestjs-pino` app; "Logs" section
+  and limitations in the README.
+
+### Deviations from the plan
+
+- **Installed at `onModuleInit`, not `onApplicationBootstrap`** (closed decision 9). Nest runs
+  `onApplicationBootstrap` deeper modules first, so the fixture's `LoggingService` (and any app
+  module that logs at bootstrap) wrote before the inspector's hook. `onModuleInit` is still after
+  `useLogger` in a normal bootstrap, and before every `onApplicationBootstrap`; only `onModuleInit`
+  hooks of modules initialised before the inspector's are missed. The closest alternative.
+- **No logger (`logger: false`) is not replaced by a new `ConsoleLogger`**: the tee wraps nothing,
+  forwards nothing and still copies. Wrapping a `ConsoleLogger` would print logs the app silenced.
+  The `ConsoleLogger` is used instead when the active logger is a plain `new Logger()`, which would
+  otherwise loop back into the tee.
+- `app.tools.ts` did not change: `app_info.tools.logs` turns `true` through the registry.
+- `nestjs-pino` is pinned to `^4.4` (with `pino` 9, `pino-http` 10) as a test devDependency: 5.x
+  requires Nest 11 and the CI matrix runs Nest 10.
+
+### Hot decisions
+
+- A level the inner logger reports as disabled (`isLevelEnabled` returns `false`) is forwarded but
+  not copied, so the buffer mirrors what the logger keeps; loggers without `isLevelEnabled` are
+  copied in full and `logs_levels.levels` is `null`.
+- Paging: without `sinceSeq`, `logs_tail` answers the newest `limit` matches; with it, the oldest
+  `limit` after it, `more: true` when cut, and `lastSeq` is the last returned `seq` (cut) or the
+  buffer's newest (not cut), so filtered-out entries are not rescanned. `dropped` counts entries
+  after `sinceSeq` the buffer already lost.
+- An `Error` as message is stored by its `message`, with its `stack` in `error` entries.
+- The first instance that installs the tee decides `logs.bufferSize`; a later `useLogger` or another
+  app in the process replaces the tee and the next install wraps the new logger with a new buffer.
+- The tee is recognised by `Symbol.for('@jsirp/nestjs-mcp/log-tee')`, so two copies of the package
+  never wrap each other.
+
+### Stumbles and resolutions
+
+- Nest's instance `Logger.error(message)` with a context sends `(message, undefined, context)`; the
+  split treats a trailing `undefined` before the context as "no stack".
+- With Nest's default logger, `Logger` instances print through their own local `ConsoleLogger`;
+  once the tee is the static logger they print through the shared default one, so a per-instance
+  `timestamp: true` loses its elapsed-time suffix. Documented in the README.
+- `bufferLogs: true` lines flushed by `useLogger` come before the install and are not copied.
+
+### Critical information for later phases
+
+- **Phase 5** reuses `RingBuffer` and the idempotent install pattern (a `Symbol.for` marker plus
+  "return the active one"). `NestMcpBootstrap` now has `onModuleInit` for the tee; enhancer wrapping
+  belongs where container instances exist.
+- **Phase 6b**: `Logger.staticInstanceRef` and the `ConsoleLogger` split rules were read on Nest 11;
+  the Nest 10 leg is their first check (`fatal` is optional in the tee for that reason).
+- **Phase 7**: hosts that log mostly through `pino-http` will see few entries; that is expected.
+
+### Verification
+
+- `yarn test` at start: 8 suites, 84 tests green, before any change.
+- `yarn build && yarn test`: 10 suites, 105 tests green; `test/logs.spec.ts` (12) and
+  `test/log-tee.spec.ts` (9) green, including the `nestjs-pino` app. A mutation that altered a
+  forwarded argument made the transparency test fail.
+- `yarn lint`, `yarn type-check`, `yarn format-check` and `sh .husky/pre-commit`: exit 0.
+
 ## Phase 3 — Routes with their guards, interceptors, pipes and filters (2026-10-25)
 
 **Work commit:** `d398e8d` (ticket #5).
