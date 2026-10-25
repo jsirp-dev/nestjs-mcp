@@ -4,6 +4,8 @@ import { isGraphUnavailable, type GraphClass, type GraphUnavailable } from '../g
 import { inScope, type InstanceScope } from '../instance/scope.js';
 import type { ApplicationConfigLike } from '../tools/tool-context.js';
 import { rawPath, routeVersion, type PathSettings, type VersionValue } from './full-path.js';
+import { INSPECTOR_INTERCEPTOR } from '../requests/handler.interceptor.js';
+import { TRACE_MIDDLEWARE_NAME } from '../requests/trace.middleware.js';
 import type { Enhancer, RouteModel } from './model.js';
 
 type EnhancerKind = 'guard' | 'interceptor' | 'pipe' | 'filter';
@@ -49,10 +51,10 @@ function globals(config: ApplicationConfigLike, kind: EnhancerKind): Enhancer[] 
     const getter = (config as unknown as Record<string, unknown>)[method];
     return typeof getter === 'function' ? ((getter.call(config) as unknown[]) ?? []) : [];
   };
-  return [...read(`getGlobal${plural}`), ...read(`getGlobalRequest${plural}`)].map((value) => ({
-    name: enhancerName(value),
-    level: 'global',
-  }));
+  // The inspector's own handler interceptor is not part of the app's chain.
+  return [...read(`getGlobal${plural}`), ...read(`getGlobalRequest${plural}`)]
+    .filter((value) => (value as Record<symbol, unknown> | null)?.[INSPECTOR_INTERCEPTOR] !== true)
+    .map((value) => ({ name: enhancerName(value), level: 'global' }));
 }
 
 /** Parameter pipes of a handler, by argument index, named after the argument (`'id'`). */
@@ -133,7 +135,9 @@ export class RoutesReader {
     const entrypoints = Object.values(
       (json?.entrypoints ?? {}) as Record<string, RawEntrypoint[]>,
     ).flat();
-    const middlewares = entrypoints.filter((entry) => entry.type === 'middleware');
+    const middlewares = entrypoints.filter(
+      (entry) => entry.type === 'middleware' && entry.className !== TRACE_MIDDLEWARE_NAME,
+    );
     const settings: PathSettings = {
       globalPrefix: this.config.getGlobalPrefix(),
       versioning: this.config.getVersioning(),

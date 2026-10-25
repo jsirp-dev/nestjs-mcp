@@ -4,6 +4,7 @@ import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
 import type { LogTee } from '../logs/log-tee.js';
+import type { TraceRecorder } from '../requests/trace-recorder.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
 import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 
@@ -30,6 +31,11 @@ export interface ToolContext {
    * `logs` group is on; `undefined` before that or with the group off.
    */
   logTee: LogTee | undefined;
+  /**
+   * The app's request traces this instance reads, set in `configure` of the instance's module when
+   * the `requests` group is on; `undefined` before that or with the group off.
+   */
+  traces: TraceRecorder | undefined;
   /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
@@ -57,6 +63,7 @@ export function createToolContext(
     graph,
     routes: new RoutesReader(serializedGraph, graph, applicationConfig),
     logTee: undefined,
+    traces: undefined,
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;

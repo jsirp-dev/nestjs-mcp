@@ -4,6 +4,7 @@ import type { ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 import { registerAppTools } from './app.tools.js';
 import { registerGraphTools } from './graph.tools.js';
 import { registerLogsTools } from './logs.tools.js';
+import { registerRequestsTools } from './requests.tools.js';
 import { ToolRegistry } from './registry.js';
 import { registerRoutesTools } from './routes.tools.js';
 import type { ToolContext } from './tool-context.js';
@@ -23,5 +24,6 @@ export class NestMcpToolsSetup implements OnModuleInit {
     if (this.options.tools.graph) registerGraphTools(this.registry, this.context);
     if (this.options.tools.routes) registerRoutesTools(this.registry, this.context);
     if (this.options.tools.logs) registerLogsTools(this.registry, this.context);
+    if (this.options.tools.requests) registerRequestsTools(this.registry, this.context);
   }
 }

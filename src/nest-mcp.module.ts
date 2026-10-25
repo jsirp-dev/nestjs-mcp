@@ -1,12 +1,16 @@
 import {
   ConfigurableModuleBuilder,
+  Inject,
   Module,
+  Optional,
   type CanActivate,
   type DynamicModule,
+  type MiddlewareConsumer,
+  type NestModule,
   type Provider,
   type Type,
 } from '@nestjs/common';
-import { ApplicationConfig, SerializedGraph } from '@nestjs/core';
+import { ApplicationConfig, ModulesContainer, SerializedGraph } from '@nestjs/core';
 import { NEST_MCP_INSTANCE, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
 import { NestMcpBootstrap } from './nest-mcp.bootstrap.js';
 import {
@@ -22,9 +26,18 @@ import {
   type NestMcpStaticOptions,
   type ResolvedNestMcpOptions,
 } from './nest-mcp.options.js';
+import {
+  installRequestTracing,
+  type TracingApplicationConfigLike,
+} from './requests/trace.middleware.js';
+import type { ModulesContainerLike } from './requests/wrap-enhancers.js';
 import { ToolRegistry } from './tools/registry.js';
 import type { SerializedGraphLike } from './graph/graph-reader.js';
-import { createToolContext, type ApplicationConfigLike } from './tools/tool-context.js';
+import {
+  createToolContext,
+  type ApplicationConfigLike,
+  type ToolContext,
+} from './tools/tool-context.js';
 import { NestMcpToolsSetup } from './tools/tools-setup.js';
 import { EnabledGuard } from './transport/enabled.guard.js';
 import { LocalOnlyGuard } from './transport/local-only.guard.js';
@@ -131,7 +144,32 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
  * it and everything that module imports. Any number of instances may coexist, each on its path.
  */
 @Module({})
-export class NestMcpModule extends ConfigurableModuleClass {
+export class NestMcpModule extends ConfigurableModuleClass implements NestModule {
+  constructor(
+    @Inject(NEST_MCP_OPTIONS) private readonly options: ResolvedNestMcpOptions,
+    @Inject(ModulesContainer) private readonly modulesContainer: ModulesContainerLike,
+    @Inject(ApplicationConfig) private readonly applicationConfig: TracingApplicationConfigLike,
+    @Optional() @Inject(NEST_MCP_TOOL_CONTEXT) private readonly context?: ToolContext,
+  ) {
+    super();
+  }
+
+  /**
+   * Installs request tracing when the `requests` group is on. Nest calls `configure` before it
+   * builds the routes, and building them binds each exception filter's `catch` for good, so the
+   * enhancers are wrapped here rather than in a lifecycle hook.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    if (!this.options.enabled || !this.options.tools.requests || !this.context) return;
+    this.context.traces = installRequestTracing({
+      options: this.options.requests,
+      modulesContainer: this.modulesContainer,
+      applicationConfig: this.applicationConfig,
+      consumer,
+      mcpPath: this.context.mcpPath(),
+    });
+  }
+
   static override forRoot(options: NestMcpOptions = {}): DynamicModule {
     return super.forRoot({ ...options, scope: 'app' });
   }

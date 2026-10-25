@@ -130,7 +130,7 @@ dependencies must come from a global module or, in the async variants, from `imp
 | `graph` | `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles` | ✅ |
 | `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
-| `requests` | `requests_list`, `request_trace` | planned |
+| `requests` | `requests_list`, `request_trace` | ✅ |
 | `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | planned |
 
 Every tool returns JSON as a single text block. Errors come back as `{ "error": "<code>", "hint": "…" }`
@@ -225,12 +225,67 @@ nothing.
   and the buffer still fills.
 - The inspector's own lines (context `NestMcp`) are in the buffer too.
 
+### Request traces
+
+Fire a request at the app, then ask where it went. Set the correlation header
+(`x-nest-mcp-request-id`, or your `requests.idHeader`) to an id of your choosing and read the trace
+by that id; without the header the request gets a generated id, and `requests_list` finds it.
+
+```bash
+curl -H 'x-nest-mcp-request-id: try-1' http://localhost:3000/api/cats/abc
+# then, from the agent: request_trace { "id": "try-1" }
+```
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `requests_list` | `limit?` (≤ 200, default 50), `method?`, `path?` (substring of the URL), `status?`, `minStatus?`, `scope?` (`'instance'` or `'app'`) | `requests`, oldest first, each `{ id, method, url, startedAt, statusCode, durationMs, handler, module, steps }` (`inFlight: true` while it runs); `matched` |
+| `request_trace` | `id`, `scope?` | The trace: `method`, `url`, `route`, `statusCode`, `durationMs`, `controller`, `handler`, `module`, `headers` and its `steps` in order; with several traces sharing an id, the latest |
+
+Each step is `{ kind, name, level?, outcome, error?, startedAtMs, durationMs }`, timed from the start
+of the request:
+
+| `kind` | Recorded | `outcome` |
+|--------|----------|-----------|
+| `guard` | When `canActivate` returns (or its Promise or Observable settles) | `allowed`, `denied` (returned `false`, Nest answers 403) or `threw` |
+| `interceptor` | Twice: `phase: 'enter'` when `intercept` is called, `phase: 'exit'` when the Observable it returned answers; `shortCircuited: true` on the exit when it answered without calling `next.handle()` | `ok` or `threw` |
+| `pipe` | Per argument, with `param` (`'id'`) and `paramType` (`param`, `query`, `body`, `custom`); never the value | `ok` or `threw` |
+| `handler` | Named `Controller.handler`, placed where it ran: after the pipes, before the interceptors' exits. Absent when a pipe or an interceptor stopped the request first | `ok` or `threw` |
+| `filter` | When an exception filter of yours handles an exception, with that exception in `error` | `caught`, or `threw` if the filter itself threw |
+
+So `GET /api/cats/abc` on a route with an API-key guard, a timing interceptor and `ParseIntPipe`
+reads `ApiKeyGuard allowed → TimingInterceptor enter → ParseIntPipe(id) threw BadRequestException →
+TimingInterceptor exit threw`, status 400.
+
+- **What a trace stores**: method, the URL with its query string, route pattern, status, timings,
+  controller, handler and steps; request headers per `requests.headers`: `'none'`, `'names'` (the
+  default, names only) or `'full'` (names and values, credentials included: choose it knowingly).
+  **Bodies are never stored**, neither of requests nor of responses.
+- **The correlation header is read, never echoed back**: the response carries nothing it did not
+  carry before. To reuse an id your app already propagates (`x-request-id` from a proxy or request
+  logger), set `requests.idHeader: 'x-request-id'`.
+- `level` (`global`, `controller`, `method`) comes from the route's enhancer chain, so it needs
+  `snapshot: true`, like `module`. Without it the steps are there and those fields are not.
+- A **`forFeature` instance lists only traces whose handler is in its scope**; a request that matched
+  no route has no handler and is seen from app scope only. `scope: 'app'` lifts the filter.
+- The inspector's own endpoints are never traced. One ring buffer of `requests.bufferSize` traces per
+  app, shared by its instances; the first instance with the `requests` group on decides
+  `requests.*`.
+- Enhancers in `REQUEST` or `TRANSIENT` scope have no long-lived instance to observe; a trace lists
+  the ones on its route in `notTraced`.
+
 ## How it works
 
 - **Stateless Streamable HTTP.** Each `POST` gets its own MCP server and transport, answered and closed.
   `GET` and `DELETE` return 405 with `Allow: POST`: there are no sessions to stream to or tear down.
 - **A Nest controller.** The endpoint is a regular controller mounted by the module, one class per
   instance, so your global prefix applies and the `guards` you configure get a real `ExecutionContext`.
+- **Traces by wrapping enhancer instances.** With the `requests` group on, the module wraps, in place,
+  `canActivate`, `intercept`, `transform` and `catch` on the guard, interceptor, pipe and filter
+  instances Nest built (global, per controller and per route) before Nest builds the routes. Each
+  wrapper records a step into the current request's trace, held in an `AsyncLocalStorage` that a
+  middleware opens, and returns exactly what the original returned, with the same `this` and the
+  same exceptions. It also adds one global interceptor of its own, which names the handler. With the
+  group off, nothing is wrapped and neither is installed.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling your app.
 
@@ -259,6 +314,13 @@ Opening it to the network without guards works, and logs a warning at every star
   started replaces the tee, and capture stops.
 - With Nest's default logger, every `Logger` prints through one shared `ConsoleLogger`; a per-instance
   `new Logger(context, { timestamp: true })` loses its elapsed-time suffix.
+- Request tracing needs the app's routes to be built after the module is configured, which is the
+  normal `NestFactory.create` → `listen` (or `init`) bootstrap. Global enhancers added after
+  `app.init()` are not traced (Nest does not run them on existing routes either). Enhancer instances
+  that are frozen are left unwrapped. Nest's built-in exception handler is not a step: an exception no
+  filter of yours caught shows in the step that threw and in the status.
+- Requests that do not go through a Nest middleware (outside the global prefix, or served before
+  Nest's router) are not traced.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

@@ -242,9 +242,11 @@ they run in order: each session starts from what the previous one committed.
 
 ## Non-blocking open decisions
 
-1. **Reusing an existing correlation header** (`x-request-id` from request loggers and proxies): the agent sets
-   `x-nest-mcp-request-id` itself today; whether to also accept the app's own id as an alias.
-   *Closes in phase 5.* Owner: Jorge.
+1. ~~**Reusing an existing correlation header**~~ (`x-request-id` from request loggers and proxies).
+   *Closed in phase 5*: no implicit alias. One header is read, `requests.idHeader`; an app that
+   already propagates `x-request-id` sets `requests.idHeader: 'x-request-id'` and its own ids become
+   the trace ids. An alias read by default would turn ids a proxy generates into trace ids nobody
+   asked for, and two headers on one request would need a precedence rule (CHANGELOG, phase 5).
 2. **Fastify**: unsupported in v1 by decision; whether v1.x adds it depends on a real consumer asking.
    *Closes when an issue appears.* Owner: Jorge.
 3. **Resources and prompts**: tools only in v1; the graph and the route list are natural resources.

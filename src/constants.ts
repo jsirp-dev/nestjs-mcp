@@ -20,6 +20,9 @@ export const NEST_MCP_INSTANCE = 'NEST_MCP_INSTANCE';
 export const PATH_METADATA = 'path';
 export const GUARDS_METADATA = '__guards__';
 export const ROUTE_ARGS_METADATA = '__routeArguments__';
+export const INTERCEPTORS_METADATA = '__interceptors__';
+export const PIPES_METADATA = '__pipes__';
+export const EXCEPTION_FILTERS_METADATA = '__exceptionFilters__';
 
 export const DEFAULT_PATH = '_mcp';
 export const DEFAULT_LOGS_BUFFER_SIZE = 2000;

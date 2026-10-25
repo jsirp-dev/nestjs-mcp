@@ -18,7 +18,7 @@ BadRequestException` → `status 400`, and the request appears in `requests_list
 
 ## Prerequisites
 
-- [ ] Phase 4 closed.
+- [x] Phase 4 closed.
 
 ## Closed decisions for this phase
 
@@ -114,13 +114,13 @@ absent. "Request traces" section in the README, with what is and is not stored.
 
 ## Verification / definition of done
 
-- [ ] `requests.spec.ts` green with every case.
-- [ ] Ten concurrent `fetch`es do not mix steps: each trace holds only its own.
-- [ ] A wrapped guard behaves exactly as unwrapped: same return values, same exception, correct `this`
+- [x] `requests.spec.ts` green with every case.
+- [x] Ten concurrent `fetch`es do not mix steps: each trace holds only its own.
+- [x] A wrapped guard behaves exactly as unwrapped: same return values, same exception, correct `this`
       (a guard using an injected property proves it).
-- [ ] With `tools.requests: false`, no method in `ModulesContainer` carries the wrapped mark.
-- [ ] The response of a request carrying `x-nest-mcp-request-id` does not contain that header.
-- [ ] `yarn build`, `lint`, `type-check` green.
+- [x] With `tools.requests: false`, no method in `ModulesContainer` carries the wrapped mark.
+- [x] The response of a request carrying `x-nest-mcp-request-id` does not contain that header.
+- [x] `yarn build`, `lint`, `type-check` green.
 
 ## Likely stumbles
 

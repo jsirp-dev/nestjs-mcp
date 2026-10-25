@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { NestMcpModule, type NestMcpFeatureOptions } from '@jsirp/nestjs-mcp';
 import { CatsModule } from './cats/cats.module.js';
 import { AppGuard } from './global.guards.js';
+import { HealthModule } from './health.module.js';
 import { TraceModule } from './trace.middleware.js';
 
 type RootInspector =
@@ -21,6 +22,12 @@ export interface FixtureAppOptions {
   appGuard?: boolean;
   /** Apply `TraceMiddleware` to the cats routes. */
   middleware?: boolean;
+  /** Provide `OwnerGuard` (injects `OwnersService`) as an `APP_GUARD` from `CatsModule`. */
+  ownerGuard?: boolean;
+  /** Provide `RequestScopedInterceptor` as a request-scoped `APP_INTERCEPTOR`. */
+  requestScoped?: boolean;
+  /** Import `HealthModule`, a controller outside `CatsModule`. */
+  health?: boolean;
 }
 
 @Module({})
@@ -36,9 +43,15 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
-        CatsModule.with({ inspector: options.catsInspector, logging: options.logging }),
+        CatsModule.with({
+          inspector: options.catsInspector,
+          logging: options.logging,
+          ownerGuard: options.ownerGuard,
+          requestScoped: options.requestScoped,
+        }),
         ...inspector,
         ...(options.middleware ? [TraceModule] : []),
+        ...(options.health ? [HealthModule] : []),
       ],
       providers: options.appGuard ? [{ provide: APP_GUARD, useClass: AppGuard }] : [],
     };
