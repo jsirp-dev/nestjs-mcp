@@ -18,10 +18,21 @@ The boundary an instance observes. Either the whole app (`forRoot`) or a module 
 that module and everything it imports, transitively. Every tool answers within the instance's scope.
 _Avoid_: context (Nest and MCP both use it for other things), area, slice
 
+**Listener**:
+The HTTP server the inspector opens inside the app's process (`127.0.0.1:7777` by default), shared by
+every instance of that process and independent of the app's own HTTP server: no host prefix,
+versioning, middleware or enhancer runs on it.
+_Avoid_: devtools port, admin port, the app's server
+
 **Endpoint**:
-The HTTP route where an instance answers MCP requests, relative to the app's global prefix and neutral
-to API versioning.
+The route on the listener where an instance answers MCP requests: `/` for the app instance, the
+configured `path` for a module instance.
 _Avoid_: URL (that is the absolute address), transport (the protocol layer behind it)
+
+**Log sink**:
+The writable the host attaches to its own logger (pino, winston…) so the inspector receives that
+logger's lines next to Nest's `Logger`; created with `createLogSink()` and passed as `logs.sink`.
+_Avoid_: transport (pino and winston use it for the same idea; here it names the protocol layer), appender
 
 **Tool**:
 One capability the inspector offers to the agent, named `snake_case` with its group as prefix, taking

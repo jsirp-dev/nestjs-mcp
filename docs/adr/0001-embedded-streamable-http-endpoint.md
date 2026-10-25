@@ -1,6 +1,6 @@
 # ADR-0001: The inspector is an endpoint embedded in the app, not a separate process
 
-**Status**: accepted
+**Status**: superseded by [ADR-0004](0004-own-listener-and-log-sink.md) (the endpoint is no longer a Nest controller; the inspector listens on its own port)
 **Date**: 2026-10-25
 
 ## Context

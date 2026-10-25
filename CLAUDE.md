@@ -59,6 +59,9 @@ If this checkout lives inside a host monorepo, that host has its own `CLAUDE.md`
   in v1.
 - ❌ Expose business logic as tools, or open the tool registry to the host app. The package is an
   inspector ([ADR-0003](docs/adr/0003-inspector-only-never-business-tools.md)).
+- ❌ Mount the endpoint as a Nest controller, or let anything of the host (prefix, versioning,
+  middlewares, global guards or interceptors) run in front of it. The inspector has its own listener
+  ([ADR-0004](docs/adr/0004-own-listener-and-log-sink.md)).
 - ❌ Constructor injection without an explicit `@Inject(token)` in `src/`: the build is esbuild (tsup)
   and does **not** emit `design:paramtypes`; without the token, Nest cannot inject in the published
   build (ts-jest tests do emit metadata, so they will not catch it).

@@ -42,7 +42,7 @@ answering with JSON as text; no resources or prompts; the tool registry is inter
 | Language | TypeScript 5, ESM + CJS via `tsup` (`dts: true`) | Nest consumers are still CJS; tsup emits both |
 | Framework | NestJS module; peer `@nestjs/common` and `@nestjs/core` `>=10 <12` | Both majors are in active use; the inspector API exists in both |
 | Configuration | Nest's `ConfigurableModuleBuilder`: `forRoot`, `forRootAsync`, `forFeature`, `forFeatureAsync` | The official mechanism; works with `ConfigService` or any other source without depending on `@nestjs/config` |
-| Protocol | `@modelcontextprotocol/sdk` ^1.32, **Streamable HTTP** transport embedded in the app | No separate process: the client points at a URL of the app ([ADR-0001](../adr/0001-embedded-streamable-http-endpoint.md)) |
+| Protocol | `@modelcontextprotocol/sdk` ^1.32, **Streamable HTTP** on the inspector's own listener inside the process | No separate process and nothing of the host in front: the client points at `http://127.0.0.1:7777/` ([ADR-0004](../adr/0004-own-listener-and-log-sink.md)) |
 | Validation | `zod` (peer, the range the SDK accepts) for tool inputs | What the SDK expects in `registerTool` |
 | Optional peers | `@nestjs/event-emitter`, `@nestjs/schedule` | Only if the app has them; detected at runtime |
 | Tests | jest + ts-jest, a fixture Nest app under `test/fixtures`, the real MCP client from the SDK | End-to-end over the protocol |
@@ -70,24 +70,25 @@ NestMcpModule.forRootAsync({
 });
 ```
 
-`forRoot` is optional; any number of `forFeature` instances may coexist, each with its own path, guards
-and switches. Each instance gets its own controller subclass, so instances never share metadata.
+`forRoot` is optional; any number of `forFeature` instances may coexist, each with its own path and
+switches. All instances of a process share one listener (`listen.host:listen.port`): `forRoot` answers
+at `/`, each `forFeature` at its `path`.
 
 `NestMcpOptions` (all optional unless noted; defaults make it work with no configuration):
 
 | Option | Type | Default | What it does |
 |--------|------|---------|--------------|
-| `enabled` | `boolean` | `process.env.NODE_ENV !== 'production'` | **The** switch. Off, the module registers nothing: no controller, no log tee, no tracing. A default, not a rule: set `true` where you want it and protect it with `guards` |
-| `path` | `string` | `'_mcp'` for `forRoot`; **required** for `forFeature` | Endpoint route, relative to the global prefix, version-neutral. With prefix `api`: `/api/_mcp` |
-| `guards` | `Type<CanActivate>[]` | `[]` | Nest guards on the endpoint, like `@UseGuards` |
-| `localOnly` | `boolean` | `true` | Reject anything not from loopback. `localOnly: false` without `guards` logs a `warn` and starts anyway |
+| `enabled` | `boolean` | `process.env.NODE_ENV !== 'production'` | **The** switch. Off, the module registers nothing: no listener, no log tee, no tracing. A default, not a rule: set `true` where you want it and protect it with `authorize` |
+| `listen` | `{ host?: string; port?: number }` | `{ host: '127.0.0.1', port: 7777 }` | The inspector's own HTTP listener, shared by every instance of the process. A busy port fails at startup naming this option |
+| `path` | `string` | `'/'` for `forRoot`; **required** for `forFeature` | Route of the instance on the listener; no host prefix or versioning applies |
+| `authorize` | `(req) => boolean \| Promise<boolean>` | none | Access control over the raw request when the listener is opened beyond loopback; `false` → 403. Listening outside loopback without it logs a `warn` |
 | `tools` | `{ graph?, routes?, logs?, requests?, events?, schedule? }` booleans | all `true` | One switch per tool group. Off removes its tools and, for `logs` and `requests`, installs nothing intrusive |
-| `logs` | `{ bufferSize?: number }` | `{ bufferSize: 2000 }` | Ring buffer for the Logger tee. Transparent: nothing masked or altered |
+| `logs` | `{ bufferSize?: number; sink?: LogSink; capture?: 'nest' \| 'sink' \| 'both'; normalize?: (record) => entry }` | `{ bufferSize: 2000, capture: 'both' }` | Ring buffer for the Logger tee and, with `sink` (from `createLogSink()`, attached by the host to its own logger), the host's logger output too. Transparent: nothing masked or altered |
 | `requests` | `{ bufferSize?: number; idHeader?: string; headers?: 'none' \| 'names' \| 'full' }` | `{ bufferSize: 500, idHeader: 'x-nest-mcp-request-id', headers: 'names' }` | Per-request traces. The id header is read, never echoed back. Full URL is stored; request headers per `headers`; bodies never |
 | `serverInfo` | `{ name?: string; version?: string }` | the host app's `package.json` | What the server reports in `initialize` |
 
-Warnings at bootstrap, once each, through Nest's `Logger` (context `NestMcp`): the endpoint URL; missing
-`snapshot: true` (with the exact option to set); endpoint open to the network without guards.
+Warnings at bootstrap, once each, through Nest's `Logger` (context `NestMcp`): the listener URL; missing
+`snapshot: true` (with the exact option to set); listener open beyond loopback without `authorize`.
 
 MCP tools (`snake_case`, grouped by prefix; every tool answers JSON as one text block):
 
@@ -131,11 +132,11 @@ packages/nestjs-mcp/
 │   ├── index.ts              Exports NestMcpModule, the options types, the result types
 │   ├── nest-mcp.module.ts    ConfigurableModuleBuilder: forRoot/forRootAsync/forFeature/forFeatureAsync
 │   ├── nest-mcp.options.ts   Types, defaults, validation
-│   ├── instance/             One inspector instance: controller subclass, scope, tool context
-│   ├── transport/            Streamable HTTP handling, LocalOnlyGuard, McpServer factory
+│   ├── instance/             One inspector instance: its path on the listener, scope, tool context
+│   ├── transport/            The process-wide listener, Streamable HTTP handling, authorize, McpServer factory
 │   ├── tools/                One file per group: app, graph, routes, logs, requests, events, schedule
 │   ├── graph/                SerializedGraph reader and the package's own model (nodes, edges, enhancers, scope)
-│   ├── logs/                 Logger tee and ring buffer (installed once per process)
+│   ├── logs/                 Logger tee, log sink and normalisers, ring buffer (installed once per process)
 │   ├── requests/             AsyncLocalStorage, middleware, enhancer wrapping, trace buffer
 │   └── support/              Ring buffer, optional-peer detection, utilities
 └── test/
@@ -151,33 +152,36 @@ repository, never here.
 ## Architecture
 
 ```
-Claude Code ──HTTP (Streamable HTTP, stateless)──▶ POST /api/_mcp       (controller subclass of the instance)
-                                                      │  LocalOnlyGuard + the instance's guards
+Claude Code ──HTTP (Streamable HTTP, stateless)──▶ POST http://127.0.0.1:7777/<path>   (the process-wide listener)
+                                                      │  loopback bind + optional authorize(req)
                                                       ▼
                                                  McpServer (SDK) ── tools, filtered by the instance's scope
                                                                              │
    SerializedGraph (@nestjs/core/inspector, snapshot:true) ◀── graph, routes, scope resolution
    ApplicationConfig (global enhancers) ◀────────────────── routes
-   Nest Logger (tee installed once per process) ◀────────── logs
+   Nest Logger (tee) + the host's logger via createLogSink() ◀── logs
    AsyncLocalStorage + wrapped enhancers + middleware ◀──── requests (installed once per process)
    EventEmitter2 / SchedulerRegistry (optional peers) ◀──── events, schedule
 ```
 
 Stateless MCP: each `POST` creates a transport and a server, answers and closes. `GET` and `DELETE`
-return 405. Process-wide installers (log tee, enhancer wrapping, middleware) are installed once, by the
-first instance that needs them; every instance reads the shared buffers through its scope.
+return 405. Process-wide installers (the listener, log tee, enhancer wrapping, middleware) are installed
+once, by the first instance that needs them; every instance reads the shared buffers through its scope.
+Nothing of the host (prefix, versioning, middlewares, global enhancers) runs in front of the inspector.
 
 ## Closed decisions
 
 1. **Runtime, not static.** The source of truth is what Nest built: `SerializedGraph`,
    `ApplicationConfig`, container instances. No source analysis.
-2. **Embedded HTTP transport, no separate process.** The client points at the app's URL. No stdio
-   bridge in v1 ([ADR-0001](../adr/0001-embedded-streamable-http-endpoint.md)).
-3. **The endpoint is a Nest controller**, under the global prefix and `VERSION_NEUTRAL`, so configured
-   `guards` are ordinary Nest guards with an `ExecutionContext`. One controller subclass per instance.
+2. **Embedded transport, no separate process.** The inspector runs inside the app's process. No stdio
+   bridge in v1.
+3. **The inspector listens on its own port, not as a Nest controller** (owner's decision, 2026-10-25,
+   [ADR-0004](../adr/0004-own-listener-and-log-sink.md), which supersedes ADR-0001): one listener per
+   process, `127.0.0.1:7777` by default, `forRoot` at `/` and each `forFeature` at its `path`. Nothing of
+   the host runs in front of it. The controller mode, `guards` and `localOnly` are removed.
 4. **Explicit `enabled`**, defaulting to `NODE_ENV !== 'production'`. Nothing is forced off by an
-   absolute rule (owner's decision, 2026-10-24). `localOnly: true` by default; `guards` for the rest;
-   open to the network without guards warns and starts.
+   absolute rule (owner's decision, 2026-10-24). Loopback binding by default; `authorize(req)` for
+   anything else; listening beyond loopback without it warns and starts.
 5. **Inspector only.** Never business tools; tools only, text JSON answers; internal registry
    ([ADR-0003](../adr/0003-inspector-only-never-business-tools.md)).
 6. **Configuration through `ConfigurableModuleBuilder`** with `forRoot`, `forRootAsync`, `forFeature`,
@@ -187,8 +191,12 @@ first instance that needs them; every instance reads the shared buffers through 
    every graph or routes tool returns `snapshot_disabled` with the option to set.
 9. **Logs are transparent**: the `LoggerService` the app set with `app.useLogger` (or the default
    `ConsoleLogger`) is wrapped with `Logger.overrideLogger` at `onApplicationBootstrap`, forwarded
-   untouched and copied to a ring buffer. Nothing is masked. What a logger writes outside Nest's
-   `Logger` (raw `pino-http`, for example) is not captured, and the README says so.
+   untouched and copied to a ring buffer. Nothing is masked. A host whose services log through their
+   own logger (pino, winston…) attaches `createLogSink()` to that logger's outputs and passes it as
+   `logs.sink`; pino and bunyan JSON and plain text are normalised out of the box, `logs.normalize`
+   maps the rest, `logs.capture` avoids duplicates and every entry carries `source`
+   ([ADR-0004](../adr/0004-own-listener-and-log-sink.md)). What reaches neither Nest's `Logger` nor
+   the sink is not captured, and the README says so.
 10. **Traces by wrapping instances**: at bootstrap the module wraps `canActivate`, `intercept`,
     `transform` and `catch` on the enhancer instances found in the container (global and per route)
     to record, in an `AsyncLocalStorage` per request, what ran, in which order and how long it took.
@@ -226,6 +234,7 @@ first instance that needs them; every instance reads the shared buffers through 
 | 5 | [`phase-05-request-traces`](phase-05-request-traces.md) | Middleware + enhancer wrapping + `AsyncLocalStorage`; `requests_list`, `request_trace`; correlation header; `headers` option |
 | 6 | [`phase-06-events-and-schedule`](phase-06-events-and-schedule.md) | `events_listeners`, `events_recent`, `schedule_jobs` with optional peers, within scope |
 | 6b | [`phase-06b-ci-and-release`](phase-06b-ci-and-release.md) | `ci.yml` with the Nest 10/11 × Node 20/22 matrix, `release.yml` publishing on tag with provenance, branch protection notes |
+| 6c | tickets [#23](https://github.com/jsirp-dev/nestjs-mcp/issues/23) and [#24](https://github.com/jsirp-dev/nestjs-mcp/issues/24) | Own listener instead of the controller (`listen`, `authorize`; `guards`/`localOnly` removed) and the log sink (`createLogSink`, `logs.sink`, `logs.capture`, `logs.normalize`). Decided after the first host validation; before the first release |
 | 7 | [`phase-07-host-validation-and-publish`](phase-07-host-validation-and-publish.md) | Dogfooding against a real host app on both Nest majors, findings filed as issues, README, first tag and MCP Registry listing |
 
 Each phase fits one session (net diff under ~1000 lines). Phases 4 and 5 do not depend on 2 and 3, but
