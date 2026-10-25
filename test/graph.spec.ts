@@ -237,6 +237,7 @@ describe('graph tools', () => {
           json: {
             error: 'snapshot_disabled',
             hint: 'Pass { snapshot: true } to NestFactory.create',
+            scope: { kind: 'app' },
           },
         });
       }
@@ -253,11 +254,104 @@ describe('graph tools', () => {
     });
   });
 
-  it('a forFeature instance answers too (scope resolution comes later)', async () => {
-    running = await startApp({ catsInspector: true });
-    const client = await running.connect(CATS_INSPECTOR_PATH);
-    const { json, isError } = await call(client, 'graph_modules');
-    expect(isError).toBe(false);
-    expect(json.scope.kind).toBe('module');
+  describe('a forFeature instance', () => {
+    const CATS_SCOPE = { kind: 'module', module: 'CatsModule' };
+
+    it('reports the module that imports it in app_info and every graph answer', async () => {
+      running = await startApp({ catsInspector: true });
+      const client = await running.connect(CATS_INSPECTOR_PATH);
+
+      expect((await call(client, 'app_info')).json.scope).toEqual(CATS_SCOPE);
+      for (const [name, args] of GRAPH_TOOLS) {
+        const { json, isError } = await call(client, name, args);
+        expect({ name, isError, scope: json.scope }).toEqual({
+          name,
+          isError: false,
+          scope: CATS_SCOPE,
+        });
+      }
+    });
+
+    it('sees only its closure: the importer and what it imports', async () => {
+      running = await startApp({ catsInspector: true });
+      const client = await running.connect(CATS_INSPECTOR_PATH);
+
+      const modules = await call(client, 'graph_modules');
+      expect(modules.json.modules.map((module: Json) => module.name).sort()).toEqual([
+        'CatsModule',
+        'OwnersModule',
+      ]);
+      const internal = await call(client, 'graph_modules', { includeInternal: true });
+      expect(internal.json.modules.map((module: Json) => module.name).sort()).toEqual([
+        'CatsModule',
+        'OwnersModule',
+      ]);
+
+      const cats = await call(client, 'graph_module', { name: 'CatsModule' });
+      expect(cats.json.module).toMatchObject({ imports: ['OwnersModule'], importedBy: [] });
+
+      const outside = await call(client, 'graph_module', { name: 'AppModule' });
+      expect(outside.isError).toBe(true);
+      expect(outside.json.error).toBe('not_found');
+
+      const providers = await call(client, 'graph_providers');
+      expect(
+        [...new Set(providers.json.providers.map((provider: Json) => provider.module))].sort(),
+      ).toEqual(['CatsModule', 'OwnersModule']);
+
+      // Unambiguous here: the other instance's NestMcpToolsSetup is out of scope.
+      const own = await call(client, 'graph_provider', { token: 'NestMcpToolsSetup' });
+      expect(own.json.error).toBe('not_found');
+
+      const service = await call(client, 'graph_provider', { token: 'CatsService' });
+      expect(service.json.provider).toMatchObject({
+        dependsOn: ['OwnersService'],
+        dependents: ['CatsController'],
+      });
+    });
+
+    it('leaves the forRoot instance of the same app on app scope, seeing every module', async () => {
+      running = await startApp({ catsInspector: true });
+      const client = await running.connect('_mcp');
+
+      expect((await call(client, 'app_info')).json.scope).toEqual({ kind: 'app' });
+      const { json } = await call(client, 'graph_modules');
+      expect(json.scope).toEqual({ kind: 'app' });
+      expect(json.modules.map((module: Json) => module.name).sort()).toEqual([
+        'AppModule',
+        'CatsModule',
+        'NestMcpModule#1',
+        'NestMcpModule#2',
+        'OwnersModule',
+      ]);
+    });
+
+    it('answers scope_unresolved without snapshot, and nothing crashes', async () => {
+      running = await startApp({ catsInspector: true, snapshot: false });
+      const client = await running.connect(CATS_INSPECTOR_PATH);
+      const unresolved = {
+        kind: 'module',
+        module: null,
+        error: 'scope_unresolved',
+        fallback: 'app',
+      };
+
+      const info = await call(client, 'app_info');
+      expect(info.isError).toBe(false);
+      expect(info.json.scope).toEqual(unresolved);
+      for (const [name, args] of GRAPH_TOOLS) {
+        const { json, isError } = await call(client, name, args);
+        expect({ name, isError, json }).toEqual({
+          name,
+          isError: true,
+          json: {
+            error: 'snapshot_disabled',
+            hint: 'Pass { snapshot: true } to NestFactory.create',
+            scope: unresolved,
+          },
+        });
+      }
+      expect((await running.fetch('/cats')).status).toBeLessThan(500);
+    });
   });
 });

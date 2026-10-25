@@ -1,10 +1,10 @@
 import { VERSION_NEUTRAL, VersioningType, type VersioningOptions } from '@nestjs/common';
 import {
   SWITCHABLE_TOOL_GROUPS,
-  type InstanceScopeKind,
   type RequestHeadersMode,
   type SwitchableToolGroup,
 } from '../nest-mcp.options.js';
+import { describeScope, type AnswerScope } from '../instance/scope.js';
 import { nestVersion } from '../support/package-info.js';
 import type { ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
@@ -31,7 +31,7 @@ export interface AppInfo {
   globalPrefix: string;
   versioning: AppInfoVersioning | null;
   mcpPath: string;
-  scope: { kind: 'app' } | { kind: 'module'; module: string | null };
+  scope: AnswerScope;
   snapshot: boolean;
   /** Which tool groups have tools registered right now. */
   tools: Record<SwitchableToolGroup, boolean>;
@@ -66,11 +66,6 @@ function describeVersioning(versioning: VersioningOptions | undefined): AppInfoV
   return described;
 }
 
-export function describeScope(kind: InstanceScopeKind): AppInfo['scope'] {
-  // Phase 2 resolves which module imported a `forFeature` instance.
-  return kind === 'app' ? { kind: 'app' } : { kind: 'module', module: null };
-}
-
 export function appInfo(registry: ToolRegistry, context: ToolContext): AppInfo {
   const { options, applicationConfig } = context;
   return {
@@ -81,7 +76,7 @@ export function appInfo(registry: ToolRegistry, context: ToolContext): AppInfo {
     globalPrefix: applicationConfig.getGlobalPrefix(),
     versioning: describeVersioning(applicationConfig.getVersioning()),
     mcpPath: context.mcpPath(),
-    scope: describeScope(options.scope),
+    scope: describeScope(context.scope()),
     snapshot: context.snapshotEnabled(),
     tools: Object.fromEntries(
       SWITCHABLE_TOOL_GROUPS.map((group) => [group, registry.isLive(group)]),

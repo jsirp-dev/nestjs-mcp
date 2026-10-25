@@ -8,6 +8,12 @@ export const NEST_MCP_OPTIONS = Symbol('NEST_MCP_OPTIONS');
 export const NEST_MCP_TOOL_CONTEXT = Symbol('NEST_MCP_TOOL_CONTEXT');
 
 /**
+ * Description of the per-instance marker token: each enabled instance provides a fresh
+ * `Symbol(NEST_MCP_INSTANCE)` so its own module node can be found in the serialized graph.
+ */
+export const NEST_MCP_INSTANCE = 'NEST_MCP_INSTANCE';
+
+/**
  * Nest's metadata keys, declared here because deep imports into `@nestjs/common/constants` do not
  * resolve under `NodeNext`. Their values have been stable since Nest 7.
  */

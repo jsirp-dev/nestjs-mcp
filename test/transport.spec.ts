@@ -142,7 +142,7 @@ describe('inspector endpoint', () => {
 
     expect(feature).toMatchObject({
       mcpPath: `/${CATS_INSPECTOR_PATH}`,
-      scope: { kind: 'module', module: null },
+      scope: { kind: 'module', module: 'CatsModule' },
     });
     expect(root).toMatchObject({ mcpPath: '/_mcp', scope: { kind: 'app' } });
   });

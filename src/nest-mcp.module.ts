@@ -7,7 +7,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { ApplicationConfig, SerializedGraph } from '@nestjs/core';
-import { NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
+import { NEST_MCP_INSTANCE, NEST_MCP_OPTIONS, NEST_MCP_TOOL_CONTEXT } from './constants.js';
 import { NestMcpBootstrap } from './nest-mcp.bootstrap.js';
 import {
   defaultEnabled,
@@ -99,13 +99,16 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
     ...((fixed.localOnly ?? true) ? [LocalOnlyGuard] : []),
     ...(fixed.guards ?? []),
   ];
+  // Unique per instance: its node in the serialized graph says which module is this instance's.
+  const instanceToken = Symbol(NEST_MCP_INSTANCE);
+  const instanceProvider: Provider = { provide: instanceToken, useValue: instanceToken };
   const toolContextProvider: Provider = {
     provide: NEST_MCP_TOOL_CONTEXT,
     useFactory: (
       options: ResolvedNestMcpOptions,
       applicationConfig: ApplicationConfigLike,
       serializedGraph: SerializedGraphLike | undefined,
-    ) => createToolContext(options, applicationConfig, serializedGraph),
+    ) => createToolContext(options, applicationConfig, serializedGraph, instanceToken),
     inject: [NEST_MCP_OPTIONS, ApplicationConfig, { token: SerializedGraph, optional: true }],
   };
 
@@ -114,6 +117,7 @@ function defineInstance(definition: DynamicModule, extras: InstanceExtras): Dyna
     controllers: [...(definition.controllers ?? []), createInstanceController(path, guards)],
     providers: [
       ...providers,
+      instanceProvider,
       toolContextProvider,
       ToolRegistry,
       NestMcpToolsSetup,

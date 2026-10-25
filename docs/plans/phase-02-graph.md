@@ -104,7 +104,7 @@ Every answer carries `scope` so the agent knows what it is looking at.
 - [x] `graph_provider` on an unknown token answers `{ error: 'not_found', candidates: [...] }` with up
       to five similar names.
 - [x] No answer contains instances or functions (`JSON.stringify` without `[Function]` or cycles).
-- [ ] The `forFeature` instance's `graph_modules` excludes modules outside its closure.
+- [x] The `forFeature` instance's `graph_modules` excludes modules outside its closure.
 - [x] `yarn build`, `lint`, `type-check` green.
 
 ## Likely stumbles

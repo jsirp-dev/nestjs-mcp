@@ -1,5 +1,7 @@
 import type { VersioningOptions } from '@nestjs/common';
 import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js';
+import { isGraphUnavailable } from '../graph/model.js';
+import { resolveScope, type InstanceScope } from '../instance/scope.js';
 import { trimSlashes, type ResolvedNestMcpOptions } from '../nest-mcp.options.js';
 
 /** What the inspector reads from Nest's `ApplicationConfig`. Duck-typed on purpose. */
@@ -20,18 +22,27 @@ export interface ToolContext {
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
   snapshotEnabled(): boolean;
+  /**
+   * What this instance observes. Resolved from the graph at the first call that can (the graph
+   * exists only after `app.init()`) and kept; `unresolved` while there is no graph.
+   */
+  scope(): InstanceScope;
 }
 
 export function createToolContext(
   options: ResolvedNestMcpOptions,
   applicationConfig: ApplicationConfigLike,
   serializedGraph: SerializedGraphLike | undefined,
+  /** The instance's own marker token, provided in its module (`NEST_MCP_INSTANCE`). */
+  instanceToken: symbol,
 ): ToolContext {
+  const graph = new GraphReader(serializedGraph);
+  let resolved: InstanceScope | undefined = options.scope === 'app' ? { kind: 'app' } : undefined;
   return {
     options,
     applicationConfig,
     serializedGraph,
-    graph: new GraphReader(serializedGraph),
+    graph,
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;
@@ -39,6 +50,13 @@ export function createToolContext(
     snapshotEnabled() {
       const nodes = serializedGraph?.toJSON().nodes;
       return nodes !== undefined && Object.keys(nodes).length > 0;
+    },
+    scope() {
+      if (resolved) return resolved;
+      const model = graph.read();
+      if (isGraphUnavailable(model)) return { kind: 'unresolved' };
+      resolved = resolveScope(model, graph.moduleDeclaring(instanceToken));
+      return resolved;
     },
   };
 }

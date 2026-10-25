@@ -52,6 +52,11 @@ At startup the module logs the endpoint, with context `NestMcp`:
 imports. `path` is required. Any number of instances may coexist, each with its own path, guards and
 switches.
 
+The scope is resolved from the serialized graph at the first tool call, so it needs `snapshot: true`
+too: `app_info.scope` then reads `{ "kind": "module", "module": "CatsModule" }`. Without `snapshot`, it
+reads `{ "kind": "module", "module": null, "error": "scope_unresolved", "fallback": "app" }`. The
+closure leaves out Nest's internal modules and the instance's own module.
+
 ```ts
 @Module({
   imports: [NestMcpModule.forFeature({ path: '_mcp/cats' })],
@@ -133,8 +138,9 @@ with `isError: true`, plus what helps to retry (`candidates`, for example).
 
 ### Graph
 
-Read from the serialized graph Nest keeps with `snapshot: true`, never from source. Every answer
-carries `scope`, the boundary the instance observes.
+Read from the serialized graph Nest keeps with `snapshot: true`, never from source. Every answer,
+errors included, carries `scope`, the boundary the instance observes: a `forFeature` instance lists
+only the modules in its closure, and the providers, dependencies and cycles among them.
 
 | Tool | Input | Answers |
 |------|-------|---------|

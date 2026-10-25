@@ -77,6 +77,16 @@ function moduleNames(nodes: RawNode[]): Map<string, string> {
 export class GraphReader {
   constructor(private readonly serializedGraph: SerializedGraphLike | undefined) {}
 
+  /**
+   * The graph id of the module that declares a provider under exactly this token (compared by
+   * identity, before it is turned into text), or `undefined` when no node has it.
+   */
+  moduleDeclaring(token: unknown): string | undefined {
+    const nodes = Object.values(this.serializedGraph?.toJSON().nodes ?? {}) as RawNode[];
+    return nodes.find((node) => node.metadata.type === 'provider' && node.metadata.token === token)
+      ?.parent;
+  }
+
   read(): GraphModel | GraphUnavailable {
     const json = this.serializedGraph?.toJSON();
     const rawNodes = Object.values(json?.nodes ?? {}) as RawNode[];

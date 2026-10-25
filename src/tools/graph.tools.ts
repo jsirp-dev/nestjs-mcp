@@ -7,14 +7,12 @@ import {
   type GraphModule,
   type ProviderScope,
 } from '../graph/model.js';
-import { describeScope, type AppInfo } from './app.tools.js';
+import { describeScope, inScope, type InstanceScope } from '../instance/scope.js';
 import { ToolError, type ToolRegistry } from './registry.js';
 import type { ToolContext } from './tool-context.js';
 
 const SNAPSHOT_HINT = 'Pass { snapshot: true } to NestFactory.create';
 const MAX_CANDIDATES = 5;
-
-type AnswerScope = AppInfo['scope'];
 
 export interface GraphModuleSummary {
   name: string;
@@ -97,16 +95,21 @@ function notFound(what: string, wanted: string, names: Iterable<string>): ToolEr
   });
 }
 
-/** One read of the graph for one tool call, with the lookups every graph tool shares. */
+/**
+ * One read of the graph for one tool call, narrowed to the instance's scope, with the lookups
+ * every graph tool shares.
+ */
 class GraphView {
   constructor(
     readonly model: GraphModel,
+    readonly scope: InstanceScope,
     readonly includeInternal: boolean,
   ) {}
 
-  /** Whether a module, class or edge shows: Nest's own only with `includeInternal`. */
-  visible(item: { internal: boolean }): boolean {
-    return this.includeInternal || !item.internal;
+  /** Whether a module or class shows: in scope, and Nest's own only with `includeInternal`. */
+  visible(item: GraphModule | GraphClass): boolean {
+    const module = 'kind' in item ? this.model.modules[item.module]! : item;
+    return (this.includeInternal || !item.internal) && inScope(this.scope, module.name);
   }
 
   modules(): GraphModule[] {
@@ -148,14 +151,20 @@ class GraphView {
       .map((entry) => entry.name);
   }
 
-  /** Constructor and property injections; `decorator` edges attach enhancers and are not here. */
+  /**
+   * Constructor and property injections between visible classes; `decorator` edges attach
+   * enhancers and are not here.
+   */
   injections(): Array<{ from: GraphClass; to: GraphClass }> {
     return this.model.edges
       .filter(
         (edge) =>
-          edge.kind === 'class-to-class' && edge.injection !== 'decorator' && this.visible(edge),
+          edge.kind === 'class-to-class' &&
+          edge.injection !== 'decorator' &&
+          (this.includeInternal || !edge.internal),
       )
-      .map((edge) => ({ from: this.model.classes[edge.from]!, to: this.model.classes[edge.to]! }));
+      .map((edge) => ({ from: this.model.classes[edge.from]!, to: this.model.classes[edge.to]! }))
+      .filter(({ from, to }) => this.visible(from) && this.visible(to));
   }
 }
 
@@ -300,14 +309,15 @@ const includeInternal = z
   .describe("Show Nest's own modules and providers (InternalCoreModule, ModuleRef, ...).");
 
 export function registerGraphTools(registry: ToolRegistry, context: ToolContext): void {
-  /** Reads the graph once for the call, or fails with `snapshot_disabled`. */
+  /** Reads the graph once for the call, in the instance's scope, or fails with `snapshot_disabled`. */
   const view = (input: Record<string, unknown>): GraphView => {
     const model = context.graph.read();
-    if (isGraphUnavailable(model)) throw new ToolError('snapshot_disabled', SNAPSHOT_HINT);
-    return new GraphView(model, input.includeInternal === true);
+    if (isGraphUnavailable(model)) {
+      throw new ToolError('snapshot_disabled', SNAPSHOT_HINT, { scope: scope() });
+    }
+    return new GraphView(model, context.scope(), input.includeInternal === true);
   };
-  // Phase 2 (#4) narrows every answer to the instance's resolved scope.
-  const scope = (): AnswerScope => describeScope(context.options.scope);
+  const scope = () => describeScope(context.scope());
 
   registry.register('graph', {
     name: 'graph_modules',
