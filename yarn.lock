@@ -956,6 +956,7 @@ __metadata:
     "@modelcontextprotocol/sdk": "npm:^1.32.2"
     "@nestjs/common": "npm:^11.1.0"
     "@nestjs/core": "npm:^11.1.0"
+    "@nestjs/event-emitter": "npm:^3.0.0"
     "@nestjs/platform-express": "npm:^11.1.0"
     "@types/jest": "npm:^29.5.14"
     "@types/node": "npm:^20.19.0"
@@ -1086,6 +1087,18 @@ __metadata:
     "@nestjs/websockets":
       optional: true
   checksum: 10c0/aaa2c571df8c186cf1b48c7a3208a4290c01f284b1fd5893cb42304e93de7b21dc77ee3140799e4891bedd4016a849a34e37917eda721ad3d6f343997a7625af
+  languageName: node
+  linkType: hard
+
+"@nestjs/event-emitter@npm:^3.0.0":
+  version: 3.1.0
+  resolution: "@nestjs/event-emitter@npm:3.1.0"
+  dependencies:
+    eventemitter2: "npm:6.4.9"
+  peerDependencies:
+    "@nestjs/common": ^10.0.0 || ^11.0.0
+    "@nestjs/core": ^10.0.0 || ^11.0.0
+  checksum: 10c0/4aee7cb0b2b745236d23c4a448bd6d0513a1c6eb2f2d6a68e9095be21ae1698bea4f7baf6dfb55b4d88a2e1bc0cfd9d0206e824aa143f97bc0629366ca4c4fa4
   languageName: node
   linkType: hard
 
@@ -3028,6 +3041,13 @@ __metadata:
   version: 1.8.1
   resolution: "etag@npm:1.8.1"
   checksum: 10c0/12be11ef62fb9817314d790089a0a49fae4e1b50594135dcb8076312b7d7e470884b5100d249b28c18581b7fd52f8b485689ffae22a11ed9ec17377a33a08f84
+  languageName: node
+  linkType: hard
+
+"eventemitter2@npm:6.4.9":
+  version: 6.4.9
+  resolution: "eventemitter2@npm:6.4.9"
+  checksum: 10c0/b2adf7d9f1544aa2d95ee271b0621acaf1e309d85ebcef1244fb0ebc7ab0afa6ffd5e371535d0981bc46195ad67fd6ff57a8d1db030584dee69aa5e371a27ea7
   languageName: node
   linkType: hard
 

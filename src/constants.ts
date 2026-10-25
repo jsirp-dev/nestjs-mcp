@@ -28,3 +28,5 @@ export const DEFAULT_PATH = '_mcp';
 export const DEFAULT_LOGS_BUFFER_SIZE = 2000;
 export const DEFAULT_REQUESTS_BUFFER_SIZE = 500;
 export const DEFAULT_ID_HEADER = 'x-nest-mcp-request-id';
+/** Emissions `events_recent` keeps. Not an option in v1: events carry no payload, so it is small. */
+export const DEFAULT_EVENTS_BUFFER_SIZE = 500;

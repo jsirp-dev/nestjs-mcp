@@ -131,7 +131,8 @@ dependencies must come from a global module or, in the async variants, from `imp
 | `routes` | `routes_list`, `route_get` | ✅ |
 | `logs` | `logs_tail`, `logs_levels` | ✅ |
 | `requests` | `requests_list`, `request_trace` | ✅ |
-| `events` / `schedule` | `events_listeners`, `events_recent`, `schedule_jobs` | planned |
+| `events` | `events_listeners`, `events_recent` (only with `@nestjs/event-emitter` and its module) | ✅ |
+| `schedule` | `schedule_jobs` | planned |
 
 Every tool returns JSON as a single text block. Errors come back as `{ "error": "<code>", "hint": "…" }`
 with `isError: true`, plus what helps to retry (`candidates`, for example).
@@ -273,6 +274,28 @@ TimingInterceptor exit threw`, status 400.
 - Enhancers in `REQUEST` or `TRANSIENT` scope have no long-lived instance to observe; a trace lists
   the ones on its route in `notTraced`.
 
+### Events
+
+With `@nestjs/event-emitter` installed and `EventEmitterModule` imported, the inspector lists who
+listens to what and records what was emitted. Without the package, or without its module, there are
+no `events_*` tools and `app_info.tools.events` is `false`.
+
+| Tool | Input | Answers |
+|------|-------|---------|
+| `events_listeners` | `event?`, `scope?` (`'instance'` or `'app'`) | `listeners`, each `{ event, className, methodName, module, options?, requestScoped? }`; `wildcard` (whether the emitter resolves wildcards) |
+| `events_recent` | `limit?` (≤ 500, default 50), `event?` | `entries`, oldest first, each `{ seq, event, method, timestamp, listeners }`; `emissions: 'app-wide'` |
+
+- **Listeners come from the `@OnEvent` metadata** of every provider and controller, request-scoped
+  ones included. With `event`, a listener matches when its pattern contains the text or when the
+  emitter itself would call it for that event: with `wildcard: true`, `events_listeners { "event":
+  "cat.adopted" }` returns the `cat.*` listeners too.
+- **Emissions are recorded by wrapping `emit` and `emitAsync`** on the app's `EventEmitter2`: the event
+  name, the method, the time and `listenerCount(event)` at that moment. **Payloads are never kept.**
+  The wrapper returns exactly what the original returned (the boolean, the same promise) and throws
+  what it threw. `event` filters by substring or, as a pattern, through the emitter (`cat.*`).
+- A `forFeature` instance lists only listeners declared in its scope. Emissions have no module, so
+  every instance sees all of them; one buffer of the latest 500 per emitter, shared by the instances.
+
 ## How it works
 
 - **Stateless Streamable HTTP.** Each `POST` gets its own MCP server and transport, answered and closed.
@@ -286,6 +309,9 @@ TimingInterceptor exit threw`, status 400.
   middleware opens, and returns exactly what the original returned, with the same `this` and the
   same exceptions. It also adds one global interceptor of its own, which names the handler. With the
   group off, nothing is wrapped and neither is installed.
+- **Emissions by wrapping the emitter.** With the `events` group on and the app's `EventEmitter2` in
+  the container, `emit` and `emitAsync` are replaced on that instance, once, by functions that record
+  the event name and listener count and then call the original. Nothing else of the emitter changes.
 - **Nothing leaves the process.** The server runs inside your app; the only network is the agent
   calling your app.
 
@@ -321,6 +347,10 @@ Opening it to the network without guards works, and logs a warning at every star
   filter of yours caught shows in the step that threw and in the status.
 - Requests that do not go through a Nest middleware (outside the global prefix, or served before
   Nest's router) are not traced.
+- Emissions are recorded from the moment the module is configured (before any `onModuleInit`); an
+  emitter the app creates on its own, outside `EventEmitterModule`, is not observed. Listeners added
+  by hand with `emitter.on(...)` count in `listeners` but are not in `events_listeners`, which reads
+  `@OnEvent` metadata.
 - Clients that only speak stdio cannot connect: there is no stdio bridge in v1.
 - `app_info` reports the Nest version the package resolves and the app name and version from the
   `package.json` of the working directory; set `serverInfo` if the app starts from elsewhere.

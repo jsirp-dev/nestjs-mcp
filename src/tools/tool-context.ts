@@ -3,6 +3,7 @@ import { GraphReader, type SerializedGraphLike } from '../graph/graph-reader.js'
 import type { ExcludedRoute } from '../routes/full-path.js';
 import { RoutesReader } from '../routes/routes-reader.js';
 import { isGraphUnavailable } from '../graph/model.js';
+import type { EventsInspector } from '../events/install-events.js';
 import type { LogTee } from '../logs/log-tee.js';
 import type { TraceRecorder } from '../requests/trace-recorder.js';
 import { resolveScope, type InstanceScope } from '../instance/scope.js';
@@ -36,6 +37,12 @@ export interface ToolContext {
    * the `requests` group is on; `undefined` before that or with the group off.
    */
   traces: TraceRecorder | undefined;
+  /**
+   * The app's emitter and its recorded emissions, set in `configure` of the instance's module when
+   * the `events` group is on, `@nestjs/event-emitter` is installed and the app imports its module;
+   * `undefined` otherwise, and then the group is not registered.
+   */
+  events: EventsInspector | undefined;
   /** The endpoint as the app serves it: global prefix plus path, with a leading slash. */
   mcpPath(): string;
   /** Whether the app was created with `snapshot: true` (the serialized graph has nodes). */
@@ -64,6 +71,7 @@ export function createToolContext(
     routes: new RoutesReader(serializedGraph, graph, applicationConfig),
     logTee: undefined,
     traces: undefined,
+    events: undefined,
     mcpPath() {
       const prefix = trimSlashes(applicationConfig.getGlobalPrefix());
       return `/${[prefix, options.path].filter(Boolean).join('/')}`;

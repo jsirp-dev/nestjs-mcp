@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { NestMcpModule, type NestMcpFeatureOptions } from '@jsirp/nestjs-mcp';
 import { CatsModule } from './cats/cats.module.js';
 import { AppGuard } from './global.guards.js';
@@ -28,6 +29,8 @@ export interface FixtureAppOptions {
   requestScoped?: boolean;
   /** Import `HealthModule`, a controller outside `CatsModule`. */
   health?: boolean;
+  /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
+  events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];
 }
 
 @Module({})
@@ -52,6 +55,9 @@ export class AppModule {
         ...inspector,
         ...(options.middleware ? [TraceModule] : []),
         ...(options.health ? [HealthModule] : []),
+        ...(options.events
+          ? [EventEmitterModule.forRoot(options.events === true ? undefined : options.events)]
+          : []),
       ],
       providers: options.appGuard ? [{ provide: APP_GUARD, useClass: AppGuard }] : [],
     };

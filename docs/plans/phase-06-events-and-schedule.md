@@ -17,8 +17,9 @@ the cron `cleanup` with its expression and `nextRun`.
 
 ## Prerequisites
 
-- [ ] Phase 5 closed.
-- [ ] `forEachInstance` in `support/` (phase 5 note).
+- [x] Phase 5 closed.
+- [x] `forEachInstance` in `support/` (phase 5 note). Created in #8 and used by the events walk;
+      `wrap-enhancers.ts` keeps its own loop (moving it is a cleanup outside this phase).
 
 ## Closed decisions for this phase
 
@@ -85,11 +86,14 @@ checks `tools/list` has no `events_*` or `schedule_*`. Sections in the README.
 
 ## Verification / definition of done
 
-- [ ] The three specs green.
+- [ ] The three specs green. #8: `events.spec.ts` and `without-peers.spec.ts` green; `schedule.spec.ts`
+      and the schedule half of `without-peers.spec.ts` are #9's.
 - [ ] Without the peers (simulate with `jest.mock` making `tryRequire` return `null`), the module boots
-      and registers nothing of the group.
-- [ ] Wrapped `emit` returns exactly what it returned (boolean) and `emitAsync` the same promise.
-- [ ] `yarn build`, `lint`, `type-check` green.
+      and registers nothing of the group. #8: events done (`jest.mock('@nestjs/event-emitter')` throws,
+      so `tryRequire` returns `null`, with a look-alike `EventEmitter2` provider in the app); schedule
+      in #9.
+- [x] Wrapped `emit` returns exactly what it returned (boolean) and `emitAsync` the same promise.
+- [ ] `yarn build`, `lint`, `type-check` green. Green at #8's commit; re-check at #9's.
 
 ## Likely stumbles
 

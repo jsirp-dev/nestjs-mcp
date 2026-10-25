@@ -87,6 +87,7 @@
   "devDependencies": {
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
+    "@nestjs/event-emitter": "^3.0.0",
     "@nestjs/platform-express": "^11.1.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.19.0",
