@@ -13,6 +13,86 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 <!-- PHASE ENTRIES START HERE -->
 
+## Phase 2 — Module and provider graph, scope resolution (2026-10-25)
+
+**Work commits:** `833a505` (ticket #3), `3c7bd7d` (ticket #4).
+
+### Done
+
+- `GraphReader` and the package's own model (`src/graph/`), mapped from `SerializedGraph.toJSON()`
+  per call; iterative Tarjan in `src/graph/cycles.ts`.
+- `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles`, switched by
+  `tools.graph`. Without `snapshot` every one answers `snapshot_disabled` with `isError: true`; unknown
+  names answer `not_found` with up to five `candidates`.
+- Scope resolution (`src/instance/scope.ts`): `resolveScope`, `inScope`, `describeScope`. A
+  `forFeature` instance observes the module that imports it and that module's transitive imports;
+  `app_info.scope` and every graph answer (errors included) say which. `forRoot` keeps app scope.
+- `test/graph.spec.ts`, `test/scope.spec.ts`, `test/cycles.spec.ts`; "Graph" section and scope notes
+  in the README.
+
+### Deviations from the plan
+
+- **`GraphReader` is not a Nest provider**: it lives on `ToolContext.graph`, built in the tool-context
+  factory from the injected `SerializedGraph`.
+- **Modules sharing a class name** are named `Name#1`, `Name#2` in graph insertion order, not by id
+  suffix, so ids never reach the agent.
+- **The instance's module is found by a marker, not by its options object**: the serialized graph
+  holds no provider values, so each enabled instance provides a fresh `Symbol(NEST_MCP_INSTANCE)` and
+  the reader finds its node by token identity (`GraphReader.moduleDeclaring`). The marker shows in
+  app-scope provider listings as `NEST_MCP_INSTANCE`.
+- **`resolveScope(graph, instanceModuleId)`** takes the module's graph id (not a token) and returns a
+  third kind, `unresolved`, besides `app` and `module`.
+
+### Hot decisions
+
+- `graph_provider` takes an optional `module` and answers `ambiguous` with `{ token, module }`
+  candidates when a token is declared in several modules; `includeInternal` is accepted by
+  `graph_module` and `graph_provider` too.
+- `dependsOn`/`dependents` count constructor and property injection only; `decorator` edges are kept
+  in the model (`GraphEdge.injection`, `GraphClass.enhancers`) for phase 3.
+- `ToolError` takes a third `details` argument, spread into the error answer.
+- **The scope answer** is `{ kind: 'app' }`, `{ kind: 'module', module: 'CatsModule' }` or, unresolved,
+  `{ kind: 'module', module: null, error: 'scope_unresolved', fallback: 'app' }`.
+- **The closure excludes** Nest's internal modules (even with `includeInternal`) and the instance's
+  own module: an inspector does not list itself. Internal providers of in-scope modules still show
+  with `includeInternal`.
+- **Several importers** of one `forFeature` definition join their closures; `module` names the first
+  in graph order.
+- **Injection edges show only when both ends are in scope**, so `dependents` never names a class the
+  instance cannot see.
+- A resolved scope is kept for the instance's lifetime; while there is no graph the instance answers
+  `unresolved` and retries on the next call.
+
+### Stumbles and resolutions
+
+- `toJSON()` returns raw tokens and labels (class functions, symbols): everything goes through
+  `tokenText`, and the raw token is what lets the marker be matched by identity.
+- Module nodes carry no imports/exports/providers lists: derived from `parent` and edges. Each module
+  also has internal provider nodes (the module class, `ModuleRef`, `ApplicationConfig`).
+- Nest 11 records no `scope` on provider metadata: derived from `static`/`transient`.
+- A module's own `ModuleRef` keeps its module id private, so it cannot name the instance's module.
+
+### Critical information for later phases
+
+- **`inScope(context.scope(), moduleName)` is the filter every later group applies**, by graph module
+  name (`Name#n` on collision). `context.scope()` is cheap after the first resolution.
+- `GraphModel.classes[*].enhancers` (with `methodKey`) and `decorator` edges are what phase 3 uses for
+  per-route enhancers.
+- `exports` lists exported providers only; re-exported modules are not in the serialized graph.
+- Not covered by a test: the `global: true` mark on `APP_*` enhancers and tool-level cycles (the
+  fixture has neither; Tarjan has unit tests), and `forFeatureAsync` scope (same `defineInstance`
+  path as `forFeature`).
+
+### Verification
+
+- `yarn build && yarn test`: 6 suites, 61 tests green.
+- `yarn lint`, `yarn type-check`, `yarn format-check` and `sh .husky/pre-commit`: exit 0.
+- The `forFeature` instance in `CatsModule`: `app_info.scope` is
+  `{ kind: 'module', module: 'CatsModule' }` and `graph_modules` is `['CatsModule', 'OwnersModule']`;
+  the `forRoot` instance lists all five modules; with `snapshot: false` it answers `scope_unresolved`
+  and `snapshot_disabled` without crashing.
+- Not run: "`yarn test` green at start" was not checked before the changes; left unticked.
+
 ## Phase 1 — Package bootstrap and MCP endpoint (2026-10-25)
 
 **Work commits:** `20c7fed` (ticket #1), `a1f64c3` (ticket #2).

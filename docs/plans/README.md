@@ -22,7 +22,7 @@ verification, likely stumbles and the two-commit closure.
 | # | Phase | Status | Document |
 |---|-------|--------|----------|
 | 1 | Package bootstrap and MCP endpoint | 🟢 Closed | [phase-01-bootstrap.md](./phase-01-bootstrap.md) |
-| 2 | Module and provider graph, scope resolution | 🟡 In progress | [phase-02-graph.md](./phase-02-graph.md) |
+| 2 | Module and provider graph, scope resolution | 🟢 Closed | [phase-02-graph.md](./phase-02-graph.md) |
 | 3 | Routes with guards, interceptors, pipes and filters | ⚪ Pending | [phase-03-routes-and-enhancers.md](./phase-03-routes-and-enhancers.md) |
 | 4 | Live logs from the app's `Logger` | ⚪ Pending | [phase-04-logs.md](./phase-04-logs.md) |
 | 5 | Request traces | ⚪ Pending | [phase-05-request-traces.md](./phase-05-request-traces.md) |
