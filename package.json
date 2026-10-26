@@ -1,7 +1,7 @@
 {
   "name": "@jsirp/nestjs-mcp",
   "mcpName": "io.github.jsirp-dev/nestjs-mcp",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Runtime MCP inspector embedded in your NestJS app, for coding agents: module graph, routes and enhancers, logs, request traces, events and scheduled jobs.",
   "license": "MIT",
   "author": "Jorge Mañanes",
