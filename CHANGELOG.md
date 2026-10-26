@@ -13,6 +13,43 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Anonymous async frames keep the path alone in `file` (ticket #30, 2026-10-26)
+
+#### Done
+
+- `src/debug/stack-frames.ts`: a frame V8 writes as `at async /path/file.js:43:31` (no name, no
+  parentheses) gives `function: "async <anonymous>"` and `file: "/path/file.js"`, with its line and
+  column; before, `async ` stayed at the start of `file`. A `file:` URL in that position becomes a
+  path, as elsewhere. The frame is then flagged and mapped like any other: in `node_modules` it is
+  `external`; in the app's compiled code it is mapped through the file's source map.
+- README (`debug`, the `stack` notes): what `function` holds, the anonymous async frame among them.
+
+#### Hot decisions
+
+- **`async <anonymous>`, not `<anonymous>`**: the issue allowed either; keeping the marker treats
+  the frame as `async Foo.bar` frames are (the marker stays in `function`) and keeps telling an
+  awaited call from a synchronous one.
+
+#### Stumbles and resolutions
+
+- **A real stack has to come from a child process**: in the test, ts-jest downlevels the test's own
+  async functions, and Jest's stack formatting drops the `async` marker even from code compiled as
+  written (`vm`). The test runs a two-line script with `node` and parses what it prints; the
+  script's path goes through `realpathSync`, since the temporary folder of macOS is a symlink
+  (`/var` → `/private/var`) and Node reports the real path.
+
+#### Verification
+
+`test/stack-frames.spec.ts`: the frame-forms test gains `at async
+/app/node_modules/@nestjs/core/router/router-execution-context.js:43:31` (→ `async <anonymous>`, that
+file, 43, 31, `external`) and `at async file:///app/dist/esm.mjs:9:8` (→ `/app/dist/esm.mjs`); a new
+test parses the stack of the issue's repro run by `node` (`at async <file>:2:16` → `{ function:
+'async <anonymous>', file, line: 2, column: 16 }`); another maps `at async <dist>/cats.js:1:5`
+through `cats.js.map` to `src/cats.ts:3:7`, `mapped: true`. All three red before the fix (`file:
+"async …"`). `yarn format-check`, `yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (26
+suites / 308 tests) green on Nest 11.2.8 and on Nest 10.4.22 (scratch copy), Node 20.19.4 and
+22.18.0.
+
 ### Interceptors' exit phase kept in the trace after a lost async context (ticket #29, 2026-10-26)
 
 #### Done

@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -35,6 +36,8 @@ describe('stack frames', () => {
       '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)',
       '    at Object.handle (/app/node_modules/@nestjs/core/router.js:40:9)',
       `    at load (${pathToFileURL('/app/dist/esm.mjs').href}:4:2)`,
+      '    at async /app/node_modules/@nestjs/core/router/router-execution-context.js:43:31',
+      `    at async ${pathToFileURL('/app/dist/esm.mjs').href}:9:8`,
     ].join('\n');
 
     expect(stackFrames(stack, 30, noMaps())).toEqual([
@@ -66,6 +69,41 @@ describe('stack frames', () => {
         external: true,
       },
       { function: 'load', file: '/app/dist/esm.mjs', line: 4, column: 2, mapped: false },
+      {
+        function: 'async <anonymous>',
+        file: '/app/node_modules/@nestjs/core/router/router-execution-context.js',
+        line: 43,
+        column: 31,
+        mapped: false,
+        external: true,
+      },
+      {
+        function: 'async <anonymous>',
+        file: '/app/dist/esm.mjs',
+        line: 9,
+        column: 8,
+        mapped: false,
+      },
+    ]);
+  });
+
+  it('parses the anonymous async frames of a real stack', () => {
+    // From a child process: ts-jest downlevels the test's own async code, and Jest's stack
+    // formatting drops the `async` marker.
+    const file = join(realpathSync(dir), 'anonymous.js');
+    writeFileSync(
+      file,
+      [
+        'const run = async () => { await null; throw new Error("x"); };',
+        '(async () => { await run(); })().catch((error) => process.stdout.write(error.stack));',
+      ].join('\n'),
+    );
+    const stack = execFileSync(process.execPath, [file], { encoding: 'utf8' });
+    expect(stack).toContain(`    at async ${file}:2:16`);
+
+    expect(stackFrames(stack, 30, noMaps())).toEqual([
+      { function: 'run', file, line: 1, column: 45, mapped: false },
+      { function: 'async <anonymous>', file, line: 2, column: 16, mapped: false },
     ]);
   });
 
@@ -100,6 +138,22 @@ describe('stack frames', () => {
     const [frame] = stackFrames(`Error: x\n    at find (${compiled}:1:5)`, 30, maps);
     expect(frame).toEqual({ function: 'find', file: original, line: 3, column: 7, mapped: true });
     expect(maps.found).toBe(1);
+  });
+
+  it('maps an anonymous async frame of the app through its map', () => {
+    const compiled = join(dir, 'dist', 'cats.js');
+    mkdirSync(join(dir, 'dist'));
+    writeFileSync(compiled, 'code;\n//# sourceMappingURL=cats.js.map\n');
+    writeFileSync(`${compiled}.map`, JSON.stringify(payload('../src/cats.ts')));
+
+    const [frame] = stackFrames(`Error: x\n    at async ${compiled}:1:5`, 30, new SourceMaps());
+    expect(frame).toEqual({
+      function: 'async <anonymous>',
+      file: join(dir, 'src', 'cats.ts'),
+      line: 3,
+      column: 7,
+      mapped: true,
+    });
   });
 
   it('maps through an inline map and resolves sourceRoot', () => {

@@ -488,6 +488,9 @@ from the throw outwards, at most `debug.stackFrames` (30).
   `mapped: true`: something mapped it already, or the process runs it as it is. The inspector never
   turns source maps on in the process; `app_info.debug.sourceMaps` says whether Node applies them
   (`process`) and how many compiled files' own maps the inspector has read (`files`).
+- **`function`** is the name V8 writes (`CatsController.find`, `new Thing`, `async Promise.all`),
+  `<anonymous>` without one; an anonymous async frame (`at async /app/dist/main.js:3:7`) is
+  `async <anonymous>`, with the path alone in `file`, mapped like any other.
 - **`external: true`** flags frames in `node_modules`, `node:` internals and frames without a file
   (`<anonymous>`, `native`), so an agent can skip to your code. They are kept, unmapped.
 - **`stack` holds positions only**: function name, file, line, column. No source text (a map's

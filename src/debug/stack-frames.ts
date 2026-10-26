@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 /** One call in an exception's stack: where it was, never what the code there says. */
 export interface StackFrame {
-  /** As V8 names it (`CatsController.find`, `new Thing`, `async Promise.all`), `<anonymous>` without one. */
+  /**
+   * As V8 names it (`CatsController.find`, `new Thing`, `async Promise.all`), `<anonymous>` without
+   * one (`async <anonymous>` for an anonymous async frame).
+   */
   function: string;
   /** An absolute path; a `node:` module; or what V8 writes when there is no file (`<anonymous>`). */
   file: string;
@@ -28,6 +31,7 @@ const MAX_CACHED_FILES = 1000;
 const JAVASCRIPT = /\.[cm]?js$/;
 const FRAME = /^\s*at (?:(.+?) \((.*)\)|(.+))$/;
 const POSITION = /^(.*):(\d+):(\d+)$/;
+const ASYNC = 'async ';
 const URL_SCHEME = /^[a-z][a-z\d+.-]+:/i;
 const MAPPING_URL = /\/\/[#@]\s*sourceMappingURL=([^\s'"]+)\s*$/gm;
 
@@ -137,8 +141,13 @@ export function stackFrames(stack: string, limit: number, maps: SourceMaps): Sta
 function parseFrame(text: string): StackFrame | undefined {
   const match = FRAME.exec(text);
   if (!match) return undefined;
-  const name = match[1] ?? '<anonymous>';
+  let name = match[1] ?? '<anonymous>';
   let location = match[2] ?? match[3] ?? '';
+  // `at async /app/dist/x.js:1:2`: an anonymous async frame, marked as `async Foo.bar` is.
+  if (match[3]?.startsWith(ASYNC)) {
+    name = `${ASYNC}<anonymous>`;
+    location = match[3].slice(ASYNC.length);
+  }
   // `eval at f (file:1:2), <anonymous>:3:4`: the position is the eval'd code's.
   if (location.startsWith('eval at ')) location = location.slice(location.lastIndexOf(', ') + 2);
   const position = POSITION.exec(location);
