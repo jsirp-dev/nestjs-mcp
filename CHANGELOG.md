@@ -55,6 +55,75 @@ guide in the [README](README.md).
 - Everything lives in memory, in bounded buffers; nothing is stored across restarts. Request bodies
   and event payloads are never stored. See the README's Limitations.
 
+## Phase 7 — Host validation and first publication (2026-10-26)
+
+**Work commit:** `30d63cd` (release preparation, ticket #12); version commit `8c7e012` (`v0.1.0`).
+
+### Done
+
+- Validated against a real host twice (ticket #11), on a Nest 11 app (global prefix, URI versioning,
+  `nestjs-pino`) and a Nest 10 app (`@nestjs/swagger` 7). The first run filed #13 to #22, the second
+  #29 and #30; all were fixed before the release, and #11 was closed with every acceptance criterion
+  observed on both hosts.
+- `0.1.0` release notes in `CHANGELOG.md`, README status set to the first release, `mcpName` in
+  `package.json`, `server.json` for the MCP Registry. Open decisions 2 (Fastify) and 3 (resources and
+  prompts) parked for v1.x.
+- `@jsirp/nestjs-mcp@0.1.0` published by `release.yml` from the `v0.1.0` tag, with an SLSA v1
+  provenance statement; the GitHub release carries the `0.1.0` notes. 16 files in the tarball.
+- Listed in the official MCP Registry as `io.github.jsirp-dev/nestjs-mcp` 0.1.0 (status active).
+
+### Deviations from the plan
+
+- **ADR-0004 superseded the endpoint described in the phase document**: own listener instead of a
+  controller, so `guards`, `localOnly`, `/api/_mcp` and the "disabled endpoint answers 404" check no
+  longer apply. The phase document carries a note.
+- **Fixes did go through corrective tickets, as the plan asked**, but between the two host runs and
+  the release, not in later phases: tickets #13 to #30, logged under the heading below.
+
+### Hot decisions
+
+- **Listed in the MCP Registry despite the fit**: the registry expects servers a client installs and
+  starts; this package runs inside the host app, so a client gets nothing from it unless the app
+  mounts it. `server.json` declares a streamable-http package at `http://127.0.0.1:7777/` and the
+  description says it is embedded. Watch for issues from people who try to start it on its own.
+
+### Stumbles and resolutions
+
+- **`npm version` inside a host monorepo**: npm found the host's workspaces and, after creating the
+  commit and the tag, tried to resolve the whole host tree and failed with an unrelated peer conflict.
+  The commit and tag were right. Next time, run `npm version <x.y.z> --workspaces=false` there.
+- **npm processed the first publish for a few minutes**: meanwhile the registry showed a `0.0.0-stage`
+  placeholder version, which stays listed next to `0.1.0`; `latest` points at `0.1.0`.
+- **MCP Registry and organisation namespaces**: `mcp-publisher login github` (device flow) only grants
+  `io.github.<user>/*`; publishing under `io.github.jsirp-dev/` needs an organisation Owner and a
+  credential that can read the org role. `mcp-publisher login github --token "$(gh auth token)"`
+  worked (the `gh` token has `read:org`). Publishing from GitHub Actions with OIDC is the alternative
+  for later releases.
+
+### Critical information for later work
+
+- Hosts consume the package from npm. In a host monorepo that embedded the submodule as a workspace,
+  switch the app to `@jsirp/nestjs-mcp@^0.1.0`, take the submodule out of the workspaces and drop the
+  Nest `resolutions` that worked around the second copy.
+- Known limits carried into 0.1.0 (README, Limitations, and the CHANGELOG entries below): log lines
+  written from `res.on('finish')` after a lost async context have no `requestId`; guards that return
+  an Observable have the same gap #29 closed for interceptors; `logs_levels.levels` is `null` with
+  `logs.capture: 'sink'`.
+
+### Verification
+
+- `release.yml` run 40309979403 green: CI matrix (Nest 10 and 11 × Node 20 and 22), `npm publish
+  --provenance`, GitHub release.
+- `https://registry.npmjs.org/@jsirp%2fnestjs-mcp/0.1.0`: version `0.1.0`, `mcpName`
+  `io.github.jsirp-dev/nestjs-mcp`, provenance predicate `https://slsa.dev/provenance/v1`, 16 files.
+- `https://registry.modelcontextprotocol.io/v0.1/servers?search=nestjs-mcp`: one server,
+  `io.github.jsirp-dev/nestjs-mcp` 0.1.0, status active.
+
+### Project closed
+
+The plan of `docs/plans/` is complete. New work comes in as issues in `jsirp-dev/nestjs-mcp`, starting
+from the known limits above.
+
 ---
 
 ## After the first host validation (tickets #13 to #30, released in 0.1.0)

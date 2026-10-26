@@ -28,7 +28,7 @@ with provenance.
 
 - [x] Phase 6b closed; `ci.yml` green on `main`.
 - [x] A host app on Nest 11 and one on Nest 10 available locally, with the person who runs them.
-- [ ] `NPM_TOKEN` secret in the GitHub repo.
+- [x] `NPM_TOKEN` secret in the GitHub repo.
 
 ## Closed decisions for this phase
 
@@ -93,7 +93,7 @@ Nothing in `src/` changes in this phase; fixes go through issues and corrective 
       the host's real data or a documented reason why not.
 - [x] Every discrepancy is an issue in the tracker with a repro.
 - [x] `npm pack --dry-run` lists only the expected files.
-- [ ] `@jsirp/nestjs-mcp@0.1.0` published with provenance; listed in the MCP Registry.
+- [x] `@jsirp/nestjs-mcp@0.1.0` published with provenance; listed in the MCP Registry.
 - [x] Open decisions 1 to 3 of the master plan closed or consciously parked for v1.x.
 
 ## Likely stumbles
