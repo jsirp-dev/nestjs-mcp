@@ -13,6 +13,67 @@ Release notes for npm (`## 0.1.0`, …) are added above the logbook starting wit
 
 ## Unreleased
 
+### Interceptors' exit phase kept in the trace after a lost async context (ticket #29, 2026-10-26)
+
+#### Done
+
+- After a middleware that loses the async context (multer before 2.3), what an interceptor runs
+  after `next.handle()` keeps the request's trace, as with a JSON body: its log lines carry the
+  `requestId` (`request_trace.logs`, `logs_tail({ requestId })`), and the listeners it triggers are
+  recorded as runs with the `requestId`.
+- The interceptor wrapper (`src/requests/wrap-enhancers.ts`) returns the interceptor's Observable
+  through `subscribedInTrace`: a `lift` whose operator subscribes the source inside the trace's
+  async context (`enterTrace`, new in `src/requests/trace-context.ts`, a no-op when already in it).
+  Values, error, completion and unsubscription are the source's own; each subscription subscribes
+  the source again; the source's Observable class is kept, as `pipe` keeps it.
+- README: the "Traces by wrapping enhancer instances" paragraph says the Observable is subscribed
+  inside the trace; the `requestId` paragraph lists the limit below.
+
+#### Hot decisions
+
+- **The cause, confirmed before the fix**: a probe in the wrapper logged the store at the moment
+  the returned Observable was subscribed: `json-1` for the JSON request, `undefined` for the
+  multipart one. Nest's router subscribes to what the interceptors return (and awaits it) in the
+  context the request arrived in; `next.handle()` turns the handler's Promise into an Observable
+  whose `then` is attached at subscription, so its emission, and every operator after it, ran in
+  the lost context. Re-entering the context on subscription is the issue's suggested remedy.
+- **Lines written once the response is sent stay out**, documented as a limit (README, `requestId`
+  paragraph): a probe middleware placed before multer with `res.on('finish', …)` writing through
+  Nest's `Logger` gives `finished@json-1` and `finished@undefined`. Nest's router ends the response
+  after an `await`, back in the lost context, and Node emits `finish` there. Covering it would mean
+  patching the response object (`end` or `emit`), which the inspector does not do. pino-http's
+  `request completed` is such a line.
+- **`lift`, though rxjs 7 marks it an internal detail** ("will be made internal in v8"): every
+  rxjs 7 operator goes through it (`operate`), it keeps the source's Observable class, and the peer
+  range is `^7`. Building the result with `new observable.constructor(…)` would break when the
+  interceptor returns a `Subject` (piping it gives an `AnonymousSubject`, whose constructor takes
+  other arguments); `new Observable(…)` from the package's own `rxjs` would drop the source's class.
+- **Interceptors only**: a guard that returns an Observable is subscribed by Nest after
+  `canActivate` returns, in the same lost context; the step is still recorded (the wrapper's `tap`
+  closes over the trace), only lines logged inside that Observable miss the id. Not reported; noted
+  below.
+
+#### Notes for the next session
+
+- `observe` in `src/requests/wrap-enhancers.ts` could pass guard Observables through
+  `subscribedInTrace` too, if a host reports lines missing from an Observable guard.
+
+#### Verification
+
+`test/multipart.spec.ts`, new test (fixture `uploadAfter: true` with `events: true`:
+`AfterUploadModule` puts multer in front of `POST /after`, whose `AfterInterceptor` logs before the
+handler and, in a `tap` after `next.handle()`, logs and emits `upload.done`; `AfterListener` logs):
+`json-1` and `multipart-1` both list `before handle`, `in handler`, `after handle`, `listener ran`,
+all with their own `requestId`; `runs_list({ name: 'AfterListener.onDone' })` gives the requestIds
+`['json-1', 'multipart-1']`; `logs_tail({ context: 'AfterInterceptor' })` gives `after
+handle@multipart-1`. Red before the fix (`after handle` and `listener ran` missing from the multipart
+trace). `test/wrap-enhancers.spec.ts`, new test: an interceptor whose `tap` reads `current()`,
+subscribed outside its trace, sees `'t'` on both emissions; the result is an `Observable`, values
+pass as they are, unsubscribing tears the source down, each subscription subscribes the source again,
+errors pass through; red without the fix (`[undefined, undefined]`). `yarn format-check`,
+`yarn lint`, `yarn type-check`, `yarn build`, `yarn test` (26 suites / 306 tests) green on
+Nest 11.2.8 and on Nest 10.4.22 (scratch copy), Node 20.19.4 and 22.18.0.
+
 ### npm-only consumption, Nest dev ranges, `.turbo/` (tickets #15, #16, #17, 2026-10-25)
 
 #### Done

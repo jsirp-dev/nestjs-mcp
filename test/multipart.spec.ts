@@ -102,3 +102,68 @@ describe('a middleware that loses the async context before the route', () => {
     expect(text).not.toContain('subject');
   });
 });
+
+describe("an interceptor's exit phase behind a middleware that loses the async context", () => {
+  let running: RunningApp;
+  let client: Client;
+
+  beforeEach(async () => {
+    running = await startApp({ uploadAfter: true, events: true });
+    client = await running.connect('/');
+  });
+
+  afterEach(async () => {
+    await running.close();
+  });
+
+  async function call(name: string, args: Record<string, unknown>): Promise<Json> {
+    return toolJson(await client.callTool({ name, arguments: args })) as Json;
+  }
+
+  async function post(id: string, init: RequestInit): Promise<void> {
+    const response = await running.fetch('/after', {
+      method: 'POST',
+      ...init,
+      headers: { [ID_HEADER]: id, ...(init.headers as Record<string, string>) },
+    });
+    await response.text();
+    expect(response.status).toBe(201);
+  }
+
+  const lines = (logs: Json[]) => logs.map((log) => `${log.context}:${log.message}`);
+
+  it('ties the exit phase and the listener it triggers to a multipart request, as to a JSON one', async () => {
+    await post('json-1', {
+      body: JSON.stringify({ subject: 'x' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    await post('multipart-1', { body: multipart() });
+
+    const expected = [
+      'AfterInterceptor:before handle',
+      'AfterController:in handler',
+      'AfterInterceptor:after handle',
+      'AfterListener:listener ran',
+    ];
+    for (const id of ['json-1', 'multipart-1']) {
+      const { trace } = await call('request_trace', { id });
+      expect(trace.steps.map(shape)).toEqual([
+        'interceptor:AfterInterceptor/enter:ok',
+        'handler:AfterController.form:ok',
+        'interceptor:AfterInterceptor/exit:ok',
+      ]);
+      expect(lines(trace.logs)).toEqual(expected);
+      expect(trace.logs.every((log: Json) => log.requestId === id)).toBe(true);
+    }
+
+    const { runs } = await call('runs_list', { name: 'AfterListener.onDone' });
+    expect((runs as Json[]).map((run) => run.requestId).sort()).toEqual(['json-1', 'multipart-1']);
+    const { entries } = await call('logs_tail', { context: 'AfterInterceptor' });
+    expect((entries as Json[]).map((entry) => `${entry.message}@${entry.requestId}`)).toEqual([
+      'before handle@json-1',
+      'after handle@json-1',
+      'before handle@multipart-1',
+      'after handle@multipart-1',
+    ]);
+  });
+});

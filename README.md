@@ -287,8 +287,10 @@ instance installs nothing.
   outside a request has none, and so has a sink line delivered outside that context: one your logger
   hands over later (an asynchronous transport, a worker-thread destination such as
   `pino.transport`) or one the sink held before it was connected. A line logged by a middleware
-  that runs after one that lost the async context (and before the first guard) has none either. It
-  needs the `requests` group on; without it no entry carries one.
+  that runs after one that lost the async context (and before the first guard) has none either,
+  nor has one written once the response is sent (a `res.on('finish')` listener, such as pino-http's
+  `request completed` line) of a request whose context was lost: Node calls it where Nest's router
+  ended the response. It needs the `requests` group on; without it no entry carries one.
 - **`runId`** is, likewise, the id of the job or listener [run](#runs) executing when the entry was
   captured; `logs_tail({ runId })` and `run_get` read a run's lines. A line a listener writes while
   it runs inside a request carries both ids. It needs the `runs` group on.
@@ -662,7 +664,9 @@ and only log it. Without either package, or with `tools.runs: false`, nothing is
   middleware opens, and returns exactly what the original returned, with the same `this` and the
   same exceptions. When a middleware after it loses that async context (one that calls `next` from
   a stream callback, as multer before 2.3 does), guards, interceptors and filters find the trace by
-  the request object and run the rest of the request back inside it. It also adds one global interceptor of its own, which names the handler. With the
+  the request object and run the rest of the request back inside it; the Observable an interceptor
+  returns is subscribed inside it too, so its exit phase (what runs after `next.handle()`) keeps
+  it. It also adds one global interceptor of its own, which names the handler. With the
   group off, nothing is wrapped and neither is installed.
 - **Emissions by wrapping the emitter.** With the `events` group on and the app's `EventEmitter2` in
   the container, `emit` and `emitAsync` are replaced on that instance, once, by functions that record

@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks';
-import { tap, type Observable } from 'rxjs';
+import { tap, type Observable, type Subscriber } from 'rxjs';
 import {
   EXCEPTION_FILTERS_METADATA,
   GUARDS_METADATA,
@@ -13,6 +13,7 @@ import {
   current,
   describeError,
   elapsed,
+  enterTrace,
   identify,
   record,
   round,
@@ -98,6 +99,24 @@ function timed(
     startedAtMs: elapsed(active, start),
     durationMs: round(performance.now() - start),
   };
+}
+
+/**
+ * `observable` with every subscription to it made inside `active`'s async context, so what its
+ * operators run when it emits (an interceptor's exit phase: its log lines, the listeners it
+ * triggers) finds the trace even when the subscriber lost it: Nest's router subscribes to what the
+ * interceptors return in the context the request arrived in, which a middleware such as multer
+ * before 2.3 has left. The values, the error, the completion and the unsubscription are the
+ * source's own; `lift` keeps the source's Observable class, as `pipe` does.
+ */
+function subscribedInTrace(
+  active: ActiveTrace,
+  observable: Observable<unknown>,
+): Observable<unknown> {
+  return observable.lift({
+    call: (subscriber: Subscriber<unknown>, source: Observable<unknown>) =>
+      enterTrace(active, () => source.subscribe(subscriber)),
+  });
 }
 
 /** Calls `onValue`/`onError` when a sync value, a Promise or (optionally) an Observable settles. */
@@ -223,12 +242,15 @@ function wrapInterceptor(original: AnyFunction, name: string): AnyFunction {
       };
       const watch = (observable: unknown) =>
         isObservable(observable)
-          ? observable.pipe(
-              tap({
-                next: () => exit('ok'),
-                error: (error: unknown) => exit('threw', error),
-                complete: () => exit('ok'),
-              }),
+          ? subscribedInTrace(
+              active,
+              observable.pipe(
+                tap({
+                  next: () => exit('ok'),
+                  error: (error: unknown) => exit('threw', error),
+                  complete: () => exit('ok'),
+                }),
+              ),
             )
           : observable;
 

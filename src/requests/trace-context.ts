@@ -54,6 +54,11 @@ export function withTrace<T>(host: unknown, fn: (active: ActiveTrace | undefined
   return active ? storage.run(active, () => fn(active)) : fn(undefined);
 }
 
+/** Runs `fn` with `active` as the current trace, entering its async context unless already in it. */
+export function enterTrace<T>(active: ActiveTrace, fn: () => T): T {
+  return storage.getStore() === active ? fn() : storage.run(active, fn);
+}
+
 /** The HTTP request of an `ExecutionContext` or `ArgumentsHost`. Duck-typed. */
 function requestOf(host: unknown): unknown {
   const ctx = host as ExecutionContextLike | undefined;

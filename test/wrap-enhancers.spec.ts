@@ -1,9 +1,9 @@
 import 'reflect-metadata';
 import { performance } from 'node:perf_hooks';
 import { UsePipes } from '@nestjs/common';
-import { Observable, isObservable, lastValueFrom, of, throwError } from 'rxjs';
+import { Observable, isObservable, lastValueFrom, of, take, tap, throwError } from 'rxjs';
 import type { RequestTrace } from '../src/requests/model.js';
-import { runWithTrace, type ActiveTrace } from '../src/requests/trace-context.js';
+import { current, runWithTrace, type ActiveTrace } from '../src/requests/trace-context.js';
 import { everyRoute } from '../src/requests/trace.middleware.js';
 import {
   WRAPPED,
@@ -120,6 +120,43 @@ describe('wrapInstance', () => {
     );
     await expect(lastValueFrom(failing.result)).rejects.toThrow('x');
     expect(failing.steps[1]).toMatchObject({ phase: 'exit', outcome: 'threw' });
+  });
+
+  it("runs an interceptor's exit phase in its trace when subscribed outside it, untouched", async () => {
+    const seen: Array<string | undefined> = [];
+    const after = {
+      intercept: (_context: unknown, next: { handle(): Observable<number> }) =>
+        next.handle().pipe(tap(() => seen.push(current()?.trace.id))),
+    };
+    wrapInstance(after);
+    let subscriptions = 0;
+    let teardowns = 0;
+    const source = new Observable<number>((subscriber) => {
+      subscriptions += 1;
+      subscriber.next(1);
+      subscriber.next(2);
+      return () => (teardowns += 1);
+    });
+
+    // Subscribed after `traced` returned: outside the trace's async context, as Nest's router does.
+    const { result } = traced(() => after.intercept(undefined, { handle: () => source }));
+    expect(result).toBeInstanceOf(Observable);
+    expect(current()).toBeUndefined();
+    const values: number[] = [];
+    const subscription = result.subscribe((value) => values.push(value));
+    expect(values).toEqual([1, 2]);
+    expect(seen).toEqual(['t', 't']);
+    expect(current()).toBeUndefined();
+    subscription.unsubscribe();
+    expect(teardowns).toBe(1);
+
+    // Each subscription subscribes the source again, and completion and errors pass through.
+    expect(await lastValueFrom(result.pipe(take(1)))).toBe(1);
+    expect(subscriptions).toBe(2);
+    const failing = traced(() =>
+      after.intercept(undefined, { handle: () => throwError(() => new TypeError('y')) }),
+    );
+    await expect(lastValueFrom(failing.result)).rejects.toThrow(TypeError);
   });
 
   it('records a pipe without its value and passes the value untouched', () => {

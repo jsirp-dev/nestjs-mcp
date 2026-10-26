@@ -6,6 +6,7 @@ import {
   Catch,
   Controller,
   ExceptionFilter,
+  Inject,
   Injectable,
   Logger,
   MiddlewareConsumer,
@@ -20,8 +21,9 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import multer from 'multer';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 
 /**
  * Parses multipart bodies with multer, which calls `next` from busboy's stream callbacks. Pinned
@@ -92,6 +94,54 @@ export class UploadController {
 export class UploadModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(UploadMiddleware).forRoutes(UploadController);
+  }
+}
+
+/** Logs on both sides of the handler and, after it, emits an event: work of its exit phase. */
+@Injectable()
+export class AfterInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(AfterInterceptor.name);
+
+  constructor(@Inject(EventEmitter2) private readonly events: EventEmitter2) {}
+
+  intercept(_context: unknown, next: CallHandler): Observable<unknown> {
+    this.logger.log('before handle');
+    return next.handle().pipe(
+      tap(() => {
+        this.logger.log('after handle');
+        this.events.emit('upload.done');
+      }),
+    );
+  }
+}
+
+@Injectable()
+export class AfterListener {
+  private readonly logger = new Logger(AfterListener.name);
+
+  @OnEvent('upload.done')
+  onDone(): void {
+    this.logger.log('listener ran');
+  }
+}
+
+@Controller('after')
+@UseInterceptors(AfterInterceptor)
+export class AfterController {
+  private readonly logger = new Logger(AfterController.name);
+
+  @Post()
+  form(): { ok: true } {
+    this.logger.log('in handler');
+    return { ok: true };
+  }
+}
+
+/** Multer in front of a route whose interceptor works after the handler. Needs `events`. */
+@Module({ controllers: [AfterController], providers: [AfterListener] })
+export class AfterUploadModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(UploadMiddleware).forRoutes(AfterController);
   }
 }
 

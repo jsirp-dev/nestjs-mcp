@@ -16,7 +16,7 @@ import { HealthModule } from './health.module.js';
 import { LoggedModule } from './logged.module.js';
 import { FunctionalMiddlewareModule, TraceModule } from './trace.middleware.js';
 import { RunsModule } from './runs.module.js';
-import { UploadFeatureModule } from './upload.module.js';
+import { AfterUploadModule, UploadFeatureModule } from './upload.module.js';
 import { WrappedModule } from './wrapped.module.js';
 
 type RootInspector =
@@ -60,6 +60,11 @@ export interface FixtureAppOptions {
   runs?: boolean;
   /** Import `UploadFeatureModule`: multer in a feature module two levels below the root. */
   upload?: boolean;
+  /**
+   * Import `AfterUploadModule`: multer in front of a route whose interceptor logs and emits an
+   * event after the handler, and a listener that logs. Needs `events`.
+   */
+  uploadAfter?: boolean;
   /** Import `EventEmitterModule.forRoot`; an object gives its options (`wildcard`, …). */
   events?: boolean | Parameters<typeof EventEmitterModule.forRoot>[0];
   /** Import `ScheduleModule.forRoot`, which schedules the fixture's decorated jobs. */
@@ -105,6 +110,7 @@ export class AppModule {
         ...(options.wrapped ? [WrappedModule] : []),
         ...(options.logged ? [LoggedModule] : []),
         ...(options.upload ? [UploadFeatureModule] : []),
+        ...(options.uploadAfter ? [AfterUploadModule] : []),
         ...(options.failing ? [FailingModule] : []),
         ...(options.runs ? [RunsModule] : []),
         ...(options.events
