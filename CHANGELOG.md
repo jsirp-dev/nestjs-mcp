@@ -9,6 +9,17 @@ two-commit convention (commit 1 = work, commit 2 = this entry).
 
 Release notes for npm (`## 0.1.0`, …) are added above the logbook starting with the first release.
 
+## 0.1.1 (2026-10-26)
+
+Documentation only; no code changes.
+
+- **Install as a regular dependency.** The README recommended `npm install --save-dev`, but the app's
+  `AppModule` imports the package, so a production install without devDependencies failed at startup
+  with `Cannot find module '@jsirp/nestjs-mcp'`. The README now says to install it as a dependency
+  (it is inert in production: `enabled` defaults to `false` there) and shows how to keep it in
+  devDependencies with an import behind a `NODE_ENV` check.
+- **Contents** section at the top of the README.
+
 ## 0.1.0 (2026-10-26)
 
 First release. `@jsirp/nestjs-mcp` embeds in a running NestJS app an MCP inspector that tells a coding

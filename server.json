@@ -6,12 +6,12 @@
     "url": "https://github.com/jsirp-dev/nestjs-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@jsirp/nestjs-mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "streamable-http",
         "url": "http://127.0.0.1:7777/"

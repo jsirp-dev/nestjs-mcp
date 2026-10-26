@@ -8,13 +8,51 @@ interceptors, pipes and filters it goes through, what the app's `Logger` is writ
 enhancers a given request passed through and how long each took, event listeners and scheduled jobs.
 Nothing to install on the agent side: it points at `http://127.0.0.1:7777/`.
 
-> Status: **0.1.0**, the first release. Every tool group in [Tools](#tools) works on Nest 10 and 11.
+> Status: **released** ([changelog](CHANGELOG.md)). Every tool group in [Tools](#tools) works on Nest 10 and 11.
+
+## Contents
+
+- [Install](#install): a regular dependency, not a devDependency
+- [Quick start](#quick-start), [one module on its own endpoint](#one-module-on-its-own-endpoint),
+  [options from a configuration source](#options-from-a-configuration-source)
+- [Point your agent at it](#point-your-agent-at-it)
+- [Options](#options)
+- [Tools](#tools): [graph](#graph), [routes and enhancers](#routes-and-enhancers), [logs](#logs)
+  and [your own logger](#reading-your-own-logger), [request traces](#request-traces),
+  [debug](#debug-stacks-of-failing-steps), [events](#events), [scheduled jobs](#scheduled-jobs),
+  [runs](#runs)
+- [How it works](#how-it-works), [Security](#security), [Limitations](#limitations)
+- [Contributing](#contributing), [License](#license)
 
 ## Install
 
 ```bash
-npm install --save-dev @jsirp/nestjs-mcp
+npm install @jsirp/nestjs-mcp
 ```
+
+Install it as a regular dependency, not a devDependency. Your `AppModule` imports it, so a production
+install that leaves devDependencies out (`npm ci --omit=dev`, `yarn workspaces focus --production`, the
+last stage of most Docker images) would make the app fail at startup with `Cannot find module
+'@jsirp/nestjs-mcp'`, before any option is read. In production it costs nothing but disk: `enabled`
+defaults to `false` there, and then the module opens no listener, copies no logs and wraps nothing.
+
+If you want it out of production builds altogether, keep it in devDependencies and import it only
+where it is installed, so the production bundle never resolves it:
+
+```ts
+import { DynamicModule, Module } from '@nestjs/common';
+
+const inspector: DynamicModule[] =
+  process.env.NODE_ENV === 'production'
+    ? []
+    : // eslint-disable-next-line @typescript-eslint/no-require-imports
+      [require('@jsirp/nestjs-mcp').NestMcpModule.forRoot()];
+
+@Module({ imports: [...inspector] })
+export class AppModule {}
+```
+
+In an ES module app, use `await import('@jsirp/nestjs-mcp')` behind the same condition.
 
 Everything a Nest app already has is a peer dependency: `@nestjs/common` and `@nestjs/core` 10 or 11,
 `reflect-metadata`, `rxjs`, and `zod` (3.25+ or 4, the versions the MCP SDK accepts).
