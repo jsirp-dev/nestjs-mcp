@@ -8,8 +8,7 @@ interceptors, pipes and filters it goes through, what the app's `Logger` is writ
 enhancers a given request passed through and how long each took, event listeners and scheduled jobs.
 Nothing to install on the agent side: it points at `http://127.0.0.1:7777/`.
 
-> Status: **0.1.0 in development**. Today the endpoint, `app_info`, the graph, routes and logs work;
-> the other tool groups land one by one (see [Tools](#tools)).
+> Status: **0.1.0**, the first release. Every tool group in [Tools](#tools) works on Nest 10 and 11.
 
 ## Install
 

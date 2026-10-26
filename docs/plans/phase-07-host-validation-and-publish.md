@@ -3,6 +3,12 @@
 > Master plan: [`00-overview.md`](./00-overview.md)
 > Previous phase: [`phase-06b-ci-and-release.md`](./phase-06b-ci-and-release.md)
 
+> **Superseded in part by [ADR-0004](../adr/0004-own-listener-and-log-sink.md)** (decided after the
+> first host validation): the inspector has its own listener (`http://127.0.0.1:7777/` by default), so
+> `guards`, `localOnly`, the `/api/_mcp` route and the "endpoint answers 404" check below no longer
+> apply. The host validation ran twice (ticket #11); its findings were tickets #13 to #22 and #29 to
+> #30, all closed before the release.
+
 ## Objective
 
 The package is mounted in a **real host application**, outside the fixture, on both supported Nest
@@ -20,8 +26,8 @@ with provenance.
 
 ## Prerequisites
 
-- [ ] Phase 6b closed; `ci.yml` green on `main`.
-- [ ] A host app on Nest 11 and one on Nest 10 available locally, with the person who runs them.
+- [x] Phase 6b closed; `ci.yml` green on `main`.
+- [x] A host app on Nest 11 and one on Nest 10 available locally, with the person who runs them.
 - [ ] `NPM_TOKEN` secret in the GitHub repo.
 
 ## Closed decisions for this phase
@@ -85,10 +91,10 @@ Nothing in `src/` changes in this phase; fixes go through issues and corrective 
 - [ ] `routes_list` on each host includes routes with guards; `request_trace` of a real request shows
       guard → interceptors → handler → status; `logs_tail`, `events_*` and `schedule_jobs` answer with
       the host's real data or a documented reason why not.
-- [ ] Every discrepancy is an issue in the tracker with a repro.
-- [ ] `npm pack --dry-run` lists only the expected files.
+- [x] Every discrepancy is an issue in the tracker with a repro.
+- [x] `npm pack --dry-run` lists only the expected files.
 - [ ] `@jsirp/nestjs-mcp@0.1.0` published with provenance; listed in the MCP Registry.
-- [ ] Open decisions 1 to 3 of the master plan closed or consciously parked for v1.x.
+- [x] Open decisions 1 to 3 of the master plan closed or consciously parked for v1.x.
 
 ## Likely stumbles
 

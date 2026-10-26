@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jsirp-dev/nestjs-mcp",
+  "description": "Runtime inspector embedded in a NestJS app: graph, routes, logs, request traces, jobs.",
+  "repository": {
+    "url": "https://github.com/jsirp-dev/nestjs-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@jsirp/nestjs-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:7777/"
+      }
+    }
+  ]
+}

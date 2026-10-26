@@ -266,6 +266,7 @@ they run in order: each session starts from what the previous one committed.
    the trace ids. An alias read by default would turn ids a proxy generates into trace ids nobody
    asked for, and two headers on one request would need a precedence rule (CHANGELOG, phase 5).
 2. **Fastify**: unsupported in v1 by decision; whether v1.x adds it depends on a real consumer asking.
-   *Closes when an issue appears.* Owner: Jorge.
+   *Parked for v1.x at the 0.1.0 release*: reopened by an issue from a consumer. Owner: Jorge.
 3. **Resources and prompts**: tools only in v1; the graph and the route list are natural resources.
-   *Closes after the first public release.* Owner: Jorge.
+   *Parked for v1.x at the 0.1.0 release*: decided once agents use the tools against real apps.
+   Owner: Jorge.

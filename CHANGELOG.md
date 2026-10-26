@@ -9,9 +9,55 @@ two-commit convention (commit 1 = work, commit 2 = this entry).
 
 Release notes for npm (`## 0.1.0`, …) are added above the logbook starting with the first release.
 
+## 0.1.0 (2026-10-26)
+
+First release. `@jsirp/nestjs-mcp` embeds in a running NestJS app an MCP inspector that tells a coding
+agent what Nest actually built and what the app is doing. Add `NestMcpModule.forRoot()` (and
+`snapshot: true` in `NestFactory.create`), then point the agent at `http://127.0.0.1:7777/`. Full
+guide in the [README](README.md).
+
+### What it gives an agent
+
+- **`app`**: `app_info`, versions, scope, which tool groups are live and the inspector's URL.
+- **`graph`**: `graph_modules`, `graph_module`, `graph_providers`, `graph_provider`, `graph_cycles`
+  over Nest's serialized graph; declared imports apart from implicit global-module links.
+- **`routes`**: `routes_list`, `route_get`, every route with its guards, interceptors, pipes and
+  filters in execution order (global, controller, method) and the middlewares that match it.
+- **`logs`**: `logs_tail`, `logs_levels`, a transparent copy of what Nest's `Logger` writes, plus the
+  host's own logger (pino, winston…) through `createLogSink()`. Each line carries the request or run it
+  was written in.
+- **`requests`**: `requests_list`, `request_trace`, the steps a request went through (guards,
+  interceptors, pipes, handler, filters) with outcome and timing, and its log lines. The agent sets
+  the `x-nest-mcp-request-id` header and asks for the trace afterwards; no streaming.
+- **`events`**: `events_listeners`, `events_recent` (with `@nestjs/event-emitter`); emissions without
+  payloads.
+- **`schedule`**: `schedule_jobs` (with `@nestjs/schedule`), each job with its next and last run.
+- **`runs`**: `runs_list`, `run_get`, each execution of a scheduled job or event listener with its
+  outcome, error and log lines.
+- **`debug`** (off by default): failing steps and runs carry the stack mapped to the original source
+  and, with `debug.locals`, the local variables at the throw, bounded and read without running app
+  code (ADR-0005).
+
+### How it runs
+
+- Its own HTTP listener inside the process (Streamable HTTP, stateless), `127.0.0.1:7777` by default:
+  nothing of the app (prefix, versioning, middlewares, global guards or interceptors) runs in front
+  of it. `listen` and `authorize(req)` for anything beyond loopback.
+- Off when `NODE_ENV` is `production` unless `enabled` says otherwise; one `forRoot` for the whole
+  app and any number of `forFeature` instances scoped to a module and its imports.
+- Read-only: it observes the app and never calls its business code (ADR-0003).
+
+### Requirements and limits
+
+- Node 20 or later; `@nestjs/common` and `@nestjs/core` 10 or 11 as peers; Express. Fastify is not
+  supported in v1, and clients that only speak stdio cannot connect.
+- Consume it from npm; a checkout listed as a workspace of a host monorepo is not supported.
+- Everything lives in memory, in bounded buffers; nothing is stored across restarts. Request bodies
+  and event payloads are never stored. See the README's Limitations.
+
 ---
 
-## Unreleased
+## After the first host validation (tickets #13 to #30, released in 0.1.0)
 
 ### Anonymous async frames keep the path alone in `file` (ticket #30, 2026-10-26)
 
